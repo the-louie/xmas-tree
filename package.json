@@ -1,0 +1,22 @@
+{
+  "name": "xmas-tree",
+  "version": "1.0.0",
+  "description": "Quick and dirty controller for xmas-tree rgb lights.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/the-louie/xmas-tree.git"
+  },
+  "author": "The Louie",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/the-louie/xmas-tree/issues"
+  },
+  "homepage": "https://github.com/the-louie/xmas-tree#readme",
+  "dependencies": {
+    "rpi-ws281x-native": "^1.0.4"
+  }
+}
