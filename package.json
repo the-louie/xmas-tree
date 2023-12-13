@@ -17,6 +17,6 @@
   },
   "homepage": "https://github.com/the-louie/xmas-tree#readme",
   "dependencies": {
-    "@gbkwiatt/node-rpi-ws281x-native": "^1.0.1"
+    "rpi-ws2801": "^0.0.4"
   }
 }

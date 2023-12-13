@@ -1,18 +1,13 @@
-const ws281x = require('@gbkwiatt/node-rpi-ws281x-native');
+var leds = require("rpi-ws2801");
 
-const channel = ws281x(100, { stripType: 'ws2812' });
+leds.connect(100);
 
-const colorArray = channel.array;
 
 const rgbBlackAll = channel.array.map(() => 0)
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 function log() { now = new Date(); console.log(now.toLocaleDateString(), now.toLocaleTimeString(), ...arguments); }
-const fillChannel = (rgb) => {
-    for (let i = 0; i <= channel.count; i++) {
-        channel.array[i] = rgb;
-    }
-}
+
 
 const gradient = (f1, f2, f3, ph1, ph2, ph3, i, dr=1, dg=1, db=1) => {
     r = Math.max((Math.sin(f1 * i + ph1) * 0.5 + 0.5) * 255 * dr, 255)
@@ -23,22 +18,24 @@ const gradient = (f1, f2, f3, ph1, ph2, ph3, i, dr=1, dg=1, db=1) => {
 
 const colorcycle_no_blue = async (count) => {
     for (let j=0; j<channel.count; j++) {
-        colorArray[j] = gradient(0.3, 0.3, 0.3, 0, 2, 3, (j + count) * 0.1, 1, 1, 0)
+        leds.setColor(j, gradient(0.3, 0.3, 0.3, 0, 2, 3, (j + count) * 0.1, 1, 1, 0));
     }
     await sleep(100);
-    ws281x.render();
+    leds.update();
 }
 
 const blink_random_slow = async (count) => {
-    fillChannel(0xff1902);
+    leds.fill(0xFF, 0x19, 0x02);
     for (let n = 0; n<=2; n++) { // blink n lights
-        colorArray[Math.floor(Math.random()* channel.count)] = 0xb4b4b4
+        leds.setColor(Math.floor(Math.random()* channel.count), 0xb4b4b4);
+
     }
-    ws281x.render()
+    leds.update();
     await sleep(10)
 
-    fillChannel(0xff1902);
-    ws281x.render()
+    leds.fill(0xFF, 0x19, 0x02);
+
+    leds.update();
     await sleep(100)
 }
 
