@@ -23,15 +23,15 @@ const colorcycle_no_blue = async (count) => {
     ws281x.render();
 }
 
-const blink_random = async (count) => {
-    colorArray = rgbBlackAll.map(() => 0xf82802) // clear all
+const blink_random_slow = async (count) => {
+    colorArray = rgbBlackAll.map(() => 0xff1902) // clear all
     for (let n = 0; n<=2; n++) { // blink n lights
-        colorArray[Math.floor(Math.random()* channel.count)] = 0xc8c850
+        colorArray[Math.floor(Math.random()* channel.count)] = 0xb4b4b4
     }
     ws281x.render()
     await sleep(10)
 
-    colorArray = rgbBlackAll.map(() => 0xf82802) // clear all
+    colorArray = rgbBlackAll.map(() => 0xff1902) // clear all
     ws281x.render()
     await sleep(100)
 }
