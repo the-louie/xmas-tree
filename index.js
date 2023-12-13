@@ -7,6 +7,7 @@ const colorArray = channel.array;
 const rgbBlackAll = channel.array.map(() => 0)
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+function log() { now = new Date(); console.log(now.toLocaleDateString(), now.toLocaleTimeString(), ...arguments); }
 
 const gradient = (f1, f2, f3, ph1, ph2, ph3, i, dr=1, dg=1, db=1) => {
     r = Math.max((Math.sin(f1 * i + ph1) * 0.5 + 0.5) * 255 * dr, 255)
@@ -42,6 +43,8 @@ const modes = [
     blink_random_slow,
 ]
 let activeMode = Math.floor(Math.random() * modes.length)
+log(`Number of modes: ${modes.length}`)
+log(`Starting mode: ${activeMode}`)
 
 const main = async () => {
     let startTime = new Date().getTime()
@@ -54,7 +57,7 @@ const main = async () => {
         if (new Date().getTime() - startTime > 30000) {
             startTime = new Date().getTime()
             activeMode = Math.floor(Math.random() * modes.length)
-            console.log(`Switched to mode ${activeMode}`)
+            log(`Switched to mode ${activeMode}`)
         }
     }
 }
