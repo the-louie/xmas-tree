@@ -1,9 +1,7 @@
-var leds = require("rpi-ws2801");
+const leds = require("rpi-ws2801");
+const LEDCOUNT = 100;
 
-leds.connect(100);
-
-
-const rgbBlackAll = channel.array.map(() => 0)
+leds.connect(LEDCOUNT);
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 function log() { now = new Date(); console.log(now.toLocaleDateString(), now.toLocaleTimeString(), ...arguments); }
@@ -17,7 +15,7 @@ const gradient = (f1, f2, f3, ph1, ph2, ph3, i, dr=1, dg=1, db=1) => {
 }
 
 const colorcycle_no_blue = async (count) => {
-    for (let j=0; j<channel.count; j++) {
+    for (let j=0; j<LEDCOUNT; j++) {
         leds.setColor(j, gradient(0.3, 0.3, 0.3, 0, 2, 3, (j + count) * 0.1, 1, 1, 0));
     }
     await sleep(100);
@@ -27,7 +25,7 @@ const colorcycle_no_blue = async (count) => {
 const blink_random_slow = async (count) => {
     leds.fill(0xFF, 0x19, 0x02);
     for (let n = 0; n<=2; n++) { // blink n lights
-        leds.setColor(Math.floor(Math.random()* channel.count), 0xb4b4b4);
+        leds.setColor(Math.floor(Math.random()* LEDCOUNT), 0xb4b4b4);
 
     }
     leds.update();
@@ -53,7 +51,7 @@ const main = async () => {
     let count = 0
     while (true) {
         await modes[activeMode](count)
-        count = (count + 1) // FIXME: behövs detta? --> // % channel.count
+        count = (count + 1) // FIXME: behövs detta? --> // % LEDCOUNT
 
         // Switch modes every 30s
         if (new Date().getTime() - startTime > 30000) {
