@@ -8,6 +8,11 @@ const rgbBlackAll = channel.array.map(() => 0)
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 function log() { now = new Date(); console.log(now.toLocaleDateString(), now.toLocaleTimeString(), ...arguments); }
+const fillChannel = (rgb) => {
+    for (let i = 0; i <= channel.count; i++) {
+        channel.array[i] = rgb;
+    }
+}
 
 const gradient = (f1, f2, f3, ph1, ph2, ph3, i, dr=1, dg=1, db=1) => {
     r = Math.max((Math.sin(f1 * i + ph1) * 0.5 + 0.5) * 255 * dr, 255)
@@ -25,14 +30,14 @@ const colorcycle_no_blue = async (count) => {
 }
 
 const blink_random_slow = async (count) => {
-    colorArray = rgbBlackAll.map(() => 0xff1902) // clear all
+    fillChannel(0xff1902);
     for (let n = 0; n<=2; n++) { // blink n lights
         colorArray[Math.floor(Math.random()* channel.count)] = 0xb4b4b4
     }
     ws281x.render()
     await sleep(10)
 
-    colorArray = rgbBlackAll.map(() => 0xff1902) // clear all
+    fillChannel(0xff1902);
     ws281x.render()
     await sleep(100)
 }
