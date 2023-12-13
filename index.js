@@ -39,7 +39,7 @@ const blink_random_slow = async (count) => {
 
 const modes = [
     colorcycle_no_blue,
-    blink_random,
+    blink_random_slow,
 ]
 let activeMode = Math.floor(Math.random() * modes.length)
 
