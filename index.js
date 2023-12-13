@@ -1,4 +1,4 @@
-const ws281x = require('rpi-ws281x-native');
+const ws281x = require('@gbkwiatt/node-rpi-ws281x-native');
 
 const channel = ws281x(100, { stripType: 'ws2812' });
 
