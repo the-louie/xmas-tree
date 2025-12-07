@@ -823,8 +823,36 @@ def run_nighttime_animations():
     animate_sparkle(1000)
 
 
+def animate_crazy_mode(iterations):
+    """
+    Cycle through all crazy animation patterns in sequence.
+    Creates an intense, chaotic light show.
+
+    Args:
+        iterations: Number of times to cycle through all crazy animations
+    """
+    for cycle in range(iterations):
+        crazy_police(5)
+        crazy_strobe(10)
+        crazy_race(8)
+        crazy_pulse(6)
+        crazy_rainbow_chase(5)
+        crazy_chaos(8)
+        crazy_meteor(6)
+
+CURRENT_MODE = 'timemode' # available modes: timemode, force_night, force_day, force_crazy
+
 while True:
-    if is_daytime():
-        run_daytime_animations()
-    else:
+    if CURRENT_MODE == 'timemode':
+        # this is time modes
+        if is_daytime():
+            run_daytime_animations()
+        else:
+            run_nighttime_animations()
+
+    elif CURRENT_MODE == 'force_night':
         run_nighttime_animations()
+    elif CURRENT_MODE == 'force_day':
+        run_daytime_animations()
+    elif CURRENT_MODE == 'force_crazy':
+        animate_crazy_mode(1000)
