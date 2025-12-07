@@ -13,6 +13,7 @@ import logging
 import signal
 import sys
 from flask import Flask, request, jsonify
+from flask_socketio import SocketIO, emit
 
 # Configure logging early
 logging.basicConfig(
@@ -185,14 +186,20 @@ def create_fading_wave_pattern(base_color, wave_color, fade_length, position, nu
 
     return led_array
 
-def animate_rotating_colors(iterations):
+def animate_rotating_colors_frame(state):
     """
-    Animate a rotating color pattern across a subset of LEDs.
+    Animate a rotating color pattern across a subset of LEDs (single frame).
     Cycles through red, green, blue, and magenta colors.
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'led_offset': 0}
+
     colors = [
         [255, 0, 0],    # Red
         [0, 255, 0],    # Green
@@ -201,85 +208,122 @@ def animate_rotating_colors(iterations):
     ]
     num_leds_in_pattern = 40
 
-    for cycle in range(iterations):
-        print('animate_rotating_colors', cycle, iterations)
-        for led_offset in range(num_leds_in_pattern):
-            color_index = ((cycle + led_offset) % len(colors))
-            current_color = colors[color_index]
-            color_array = repeat_color(current_color, 3)
-            send_color_array(color_array)
-        time.sleep(0.1)
+    color_index = ((state['cycle'] + state['led_offset']) % len(colors))
+    current_color = colors[color_index]
+    color_array = repeat_color(current_color, 3)
+    send_color_array(color_array)
 
-def animate_solid_color_cycle(iterations):
+    state['led_offset'] += 1
+    if state['led_offset'] >= num_leds_in_pattern:
+        state['led_offset'] = 0
+        state['cycle'] += 1
+
+    return state
+
+def animate_solid_color_cycle_frame(state):
     """
-    Animate by filling all LEDs with a single color, cycling through red, green, and blue.
+    Animate by filling all LEDs with a single color, cycling through red, green, and blue (single frame).
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'frame': 0}
+
     colors = [
         [255, 0, 0],   # Red
         [0, 255, 0],   # Green
         [0, 0, 255]    # Blue
     ]
     num_leds = 40
+    FRAMES_PER_COLOR = 10  # 0.1 seconds * 10 frames per second = 1 second per color
 
-    for cycle in range(iterations):
-        print('animate_solid_color_cycle', cycle, iterations)
-        current_color = colors[cycle % len(colors)]
-        color_array = repeat_color(current_color, num_leds)
-        send_color_array(color_array)
-        time.sleep(0.1)
+    current_color = colors[state['cycle'] % len(colors)]
+    color_array = repeat_color(current_color, num_leds)
+    send_color_array(color_array)
 
-def animate_white_wave(iterations):
+    state['frame'] += 1
+    if state['frame'] >= FRAMES_PER_COLOR:
+        state['frame'] = 0
+        state['cycle'] += 1
+
+    return state
+
+def animate_white_wave_frame(state):
     """
-    Animate a white wave that moves across the LED strip with a fading tail.
+    Animate a white wave that moves across the LED strip with a fading tail (single frame).
     Creates a wave effect with decreasing brightness behind the leading edge.
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'wave_position': 0}
+
     WHITE_WAVE_FADE_LENGTH = 10
     BLACK = [0, 0, 0]
     WHITE = [255, 255, 255]
 
-    for cycle in range(iterations):
-        print('animate_white_wave', cycle, iterations)
-        for wave_position in range(NUM_LEDS):
-            led_array = create_fading_wave_pattern(BLACK, WHITE, WHITE_WAVE_FADE_LENGTH,
-                                                  wave_position, NUM_LEDS)
-            send_color_array(led_array)
-            time.sleep(0.01)
+    led_array = create_fading_wave_pattern(BLACK, WHITE, WHITE_WAVE_FADE_LENGTH,
+                                          state['wave_position'], NUM_LEDS)
+    send_color_array(led_array)
 
-def animate_orange_wave(iterations):
+    state['wave_position'] += 1
+    if state['wave_position'] >= NUM_LEDS:
+        state['wave_position'] = 0
+        state['cycle'] += 1
+
+    return state
+
+def animate_orange_wave_frame(state):
     """
-    Animate an orange wave that moves across the LED strip.
+    Animate an orange wave that moves across the LED strip (single frame).
     Uses the favorite orange color as background with a bright orange wave.
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'wave_position': 0}
+
     WAVE_COLOR = [255, 50, 3]  # Bright orange highlight
     WAVE_LENGTH = 15
-    WAVE_DELAY = 0.05
 
-    for cycle in range(iterations):
-        print('animate_orange_wave', cycle, iterations)
-        for wave_position in range(NUM_LEDS):
-            led_array = create_wave_pattern(FAVORITE_COLOR, WAVE_COLOR, WAVE_LENGTH,
-                                          wave_position, NUM_LEDS)
-            send_color_array(led_array)
-            time.sleep(WAVE_DELAY)
+    led_array = create_wave_pattern(FAVORITE_COLOR, WAVE_COLOR, WAVE_LENGTH,
+                                  state['wave_position'], NUM_LEDS)
+    send_color_array(led_array)
+
+    state['wave_position'] += 1
+    if state['wave_position'] >= NUM_LEDS:
+        state['wave_position'] = 0
+        state['cycle'] += 1
+
+    return state
 
 
-def animate_gradient_wave(iterations):
+def animate_gradient_wave_frame(state):
     """
-    Animate a smooth gradient wave that cycles through colors using sine wave functions.
+    Animate a smooth gradient wave that cycles through colors using sine wave functions (single frame).
     Creates a flowing color effect across all LEDs.
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'step': 0}
+
     GRADIENT_STEPS = 418
     GRADIENT_SPEED = 0.1
     FREQUENCY = 0.3
@@ -287,23 +331,33 @@ def animate_gradient_wave(iterations):
     PHASE_G = 2
     PHASE_B = 3
 
-    for cycle in range(iterations):
-        for step in range(GRADIENT_STEPS):
-            position = step * GRADIENT_SPEED
-            color = calculate_sine_gradient(FREQUENCY, FREQUENCY, FREQUENCY,
-                                           PHASE_R, PHASE_G, PHASE_B, position)
-            color_array = repeat_color(color, NUM_LEDS)
-            send_color_array(color_array)
-            time.sleep(0.1)
+    position = state['step'] * GRADIENT_SPEED
+    color = calculate_sine_gradient(FREQUENCY, FREQUENCY, FREQUENCY,
+                                   PHASE_R, PHASE_G, PHASE_B, position)
+    color_array = repeat_color(color, NUM_LEDS)
+    send_color_array(color_array)
 
-def animate_gradient_wave_no_blue(iterations):
+    state['step'] += 1
+    if state['step'] >= GRADIENT_STEPS:
+        state['step'] = 0
+        state['cycle'] += 1
+
+    return state
+
+def animate_gradient_wave_no_blue_frame(state):
     """
-    Animate a smooth gradient wave without blue channel (red and green only).
+    Animate a smooth gradient wave without blue channel (red and green only) (single frame).
     Creates a warm color effect across all LEDs.
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'step': 0}
+
     GRADIENT_STEPS = 418
     GRADIENT_SPEED = 0.1
     FREQUENCY = 0.3
@@ -311,92 +365,129 @@ def animate_gradient_wave_no_blue(iterations):
     PHASE_G = 2
     PHASE_B = 3
 
-    for cycle in range(iterations):
-        for step in range(GRADIENT_STEPS):
-            position = step * GRADIENT_SPEED
-            color = calculate_sine_gradient(FREQUENCY, FREQUENCY, FREQUENCY,
-                                           PHASE_R, PHASE_G, PHASE_B, position)
-            color[2] = 0  # Remove blue channel
-            color_array = repeat_color(color, NUM_LEDS)
-            send_color_array(color_array)
-            time.sleep(0.1)
+    position = state['step'] * GRADIENT_SPEED
+    color = calculate_sine_gradient(FREQUENCY, FREQUENCY, FREQUENCY,
+                                   PHASE_R, PHASE_G, PHASE_B, position)
+    color[2] = 0  # Remove blue channel
+    color_array = repeat_color(color, NUM_LEDS)
+    send_color_array(color_array)
 
-def animate_sparkle(iterations):
+    state['step'] += 1
+    if state['step'] >= GRADIENT_STEPS:
+        state['step'] = 0
+        state['cycle'] += 1
+
+    return state
+
+def animate_sparkle_frame(state):
     """
-    Animate random sparkles on a background of favorite color.
+    Animate random sparkles on a background of favorite color (single frame).
     Two random LEDs light up with a yellow-white color each frame.
 
     Args:
-        iterations: Number of frames to display
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'frame': 0}
+
     SPARKLE_COLOR = [200, 200, 80]  # Yellow-white sparkle
     NUM_SPARKLES = 2
     MAX_LED_INDEX = NUM_LEDS - NUM_SPARKLES  # Ensure we don't overflow array
 
-    for frame in range(iterations):
-        led_array = create_led_array(FAVORITE_COLOR, NUM_LEDS)
+    led_array = create_led_array(FAVORITE_COLOR, NUM_LEDS)
 
-        # Set random LEDs to sparkle color
-        for _ in range(NUM_SPARKLES):
-            led_index = random.randint(0, MAX_LED_INDEX)
-            set_led_color(led_array, led_index, SPARKLE_COLOR)
+    # Set random LEDs to sparkle color
+    for _ in range(NUM_SPARKLES):
+        led_index = random.randint(0, MAX_LED_INDEX)
+        set_led_color(led_array, led_index, SPARKLE_COLOR)
 
-        send_color_array(led_array)
-        time.sleep(0.04)
+    send_color_array(led_array)
+    state['frame'] += 1
+    return state
 
-def animate_slow_sparkle(iterations):
+def animate_slow_sparkle_frame(state):
     """
-    Animate slow, occasional sparkles on a background of favorite color.
+    Animate slow, occasional sparkles on a background of favorite color (single frame).
     Sparkles appear infrequently with longer pauses between frames.
 
     Args:
-        iterations: Number of frames to display
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'frame': 0, 'phase': 'sparkle'}  # phase: 'sparkle' or 'pause'
+
     SPARKLE_COLOR = [180, 180, 180]  # White sparkle
     SPARKLE_FREQUENCY = 100  # Sparkle every N frames
     MAX_LED_INDEX = NUM_LEDS - 1
-    FRAME_DELAY = 0.05
-    PAUSE_DELAY = 2.0
+    PAUSE_FRAMES = 40  # 2.0 seconds / 0.05 seconds per frame
 
-    for frame in range(iterations):
+    if state['phase'] == 'sparkle':
         led_array = create_led_array(FAVORITE_COLOR, NUM_LEDS)
 
         # Occasionally add a sparkle
-        if frame % SPARKLE_FREQUENCY == 0:
+        if state['frame'] % SPARKLE_FREQUENCY == 0:
             led_index = random.randint(0, MAX_LED_INDEX)
             set_led_color(led_array, led_index, SPARKLE_COLOR)
 
         send_color_array(led_array)
-        time.sleep(FRAME_DELAY)
+        state['frame'] += 1
 
-        # Return to base color with longer pause
+        # Switch to pause phase after sparkle
+        if state['frame'] % SPARKLE_FREQUENCY == 0:
+            state['phase'] = 'pause'
+            state['pause_frame'] = 0
+    else:
+        # Pause phase - show base color
         led_array = create_led_array(FAVORITE_COLOR, NUM_LEDS)
         send_color_array(led_array)
-        time.sleep(PAUSE_DELAY)
+        state['pause_frame'] = state.get('pause_frame', 0) + 1
 
-def animate_random_colors(iterations):
+        if state['pause_frame'] >= PAUSE_FRAMES:
+            state['phase'] = 'sparkle'
+            del state['pause_frame']
+
+    return state
+
+def animate_random_colors_frame(state):
     """
-    Animate random colors for each LED independently.
+    Animate random colors for each LED independently (single frame).
     Each LED gets a random RGB value each frame.
 
     Args:
-        iterations: Number of frames to display
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'frame': 0}
+
     num_color_values = NUM_LEDS * 3  # RGB values for all LEDs
+    color_array = [random.randint(0, 255) for _ in range(num_color_values)]
+    send_color_array(color_array)
+    state['frame'] += 1
+    return state
 
-    for frame in range(iterations):
-        color_array = [random.randint(0, 255) for _ in range(num_color_values)]
-        send_color_array(color_array)
-        time.sleep(0.5)
-
-def animate_color_chase(iterations):
+def animate_color_chase_frame(state):
     """
-    Animate a color chase pattern with red, green, and cyan colors separated by black.
+    Animate a color chase pattern with red, green, and cyan colors separated by black (single frame).
     Creates a moving pattern effect across the LED strip.
 
     Args:
-        iterations: Number of times to repeat the animation cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'frame': 0}
+
     # Pattern: Red, 2x Black, Green, 2x Black, Cyan, 2x Black (repeating)
     color_pattern = [
         255, 0, 0,      # Red
@@ -409,28 +500,38 @@ def animate_color_chase(iterations):
         0, 0, 0,        # Black
         0, 0, 0         # Black
     ]
+    FRAMES_PER_STEP = 50  # 0.5 seconds * 100 frames per second
 
-    for cycle in range(iterations):
-        print('animate_color_chase', cycle, iterations)
-        num_values = NUM_LEDS * 3
-        color_array = [color_pattern[(i + (cycle * 3)) % len(color_pattern)]
-                       for i in range(num_values)]
-        send_color_array(color_array)
-        time.sleep(0.5)
+    num_values = NUM_LEDS * 3
+    color_array = [color_pattern[(i + (state['cycle'] * 3)) % len(color_pattern)]
+                   for i in range(num_values)]
+    send_color_array(color_array)
 
-def crazy_police(iterations):
+    state['frame'] += 1
+    if state['frame'] >= FRAMES_PER_STEP:
+        state['frame'] = 0
+        state['cycle'] += 1
+
+    return state
+
+def crazy_police_frame(state):
     """
-    Flash the top half and bottom half of the LED strand separately in red and blue.
+    Flash the top half and bottom half of the LED strand separately in red and blue (single frame).
     One half rapidly flashes for 1 second, then the other half for 1 second, repeating.
 
     Args:
-        iterations: Number of times to repeat the full cycle (top + bottom)
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'phase': 'top_on', 'flash': 0}  # phase: 'top_on', 'top_off', 'bottom_on', 'bottom_off'
+
     RED = [255, 0, 0]
     BLUE = [0, 0, 255]
     BLACK = [0, 0, 0]
-    FLASH_DURATION = 1.0  # seconds
-    FLASH_RATE = 0.1  # seconds between flashes
+    FLASH_DURATION_FRAMES = 10  # 1.0 seconds / 0.1 seconds per flash = 10 flashes
 
     HALF_LED_COUNT = NUM_LEDS // 2
     TOP_HALF_START = 0
@@ -438,137 +539,156 @@ def crazy_police(iterations):
     BOTTOM_HALF_START = HALF_LED_COUNT
     BOTTOM_HALF_END = NUM_LEDS
 
-    for cycle in range(iterations):
-        # Flash top half (red) for 1 second
-        flash_count = int(FLASH_DURATION / FLASH_RATE)
-        for flash in range(flash_count):
-            led_array = create_led_array(BLACK, NUM_LEDS)
+    if state['phase'] == 'top_on':
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        for led_index in range(TOP_HALF_START, TOP_HALF_END):
+            set_led_color(led_array, led_index, RED)
+        send_color_array(led_array)
+        state['phase'] = 'top_off'
+    elif state['phase'] == 'top_off':
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        send_color_array(led_array)
+        state['flash'] += 1
+        if state['flash'] >= FLASH_DURATION_FRAMES:
+            state['flash'] = 0
+            state['phase'] = 'bottom_on'
+        else:
+            state['phase'] = 'top_on'
+    elif state['phase'] == 'bottom_on':
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        for led_index in range(BOTTOM_HALF_START, BOTTOM_HALF_END):
+            set_led_color(led_array, led_index, BLUE)
+        send_color_array(led_array)
+        state['phase'] = 'bottom_off'
+    elif state['phase'] == 'bottom_off':
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        send_color_array(led_array)
+        state['flash'] += 1
+        if state['flash'] >= FLASH_DURATION_FRAMES:
+            state['flash'] = 0
+            state['cycle'] += 1
+            state['phase'] = 'top_on'
+        else:
+            state['phase'] = 'bottom_on'
 
-            # Set top half to red
-            for led_index in range(TOP_HALF_START, TOP_HALF_END):
-                set_led_color(led_array, led_index, RED)
-
-            send_color_array(led_array)
-            time.sleep(FLASH_RATE)
-
-            # Turn off
-            led_array = create_led_array(BLACK, NUM_LEDS)
-            send_color_array(led_array)
-            time.sleep(FLASH_RATE)
-
-        # Flash bottom half (blue) for 1 second
-        for flash in range(flash_count):
-            led_array = create_led_array(BLACK, NUM_LEDS)
-
-            # Set bottom half to blue
-            for led_index in range(BOTTOM_HALF_START, BOTTOM_HALF_END):
-                set_led_color(led_array, led_index, BLUE)
-
-            send_color_array(led_array)
-            time.sleep(FLASH_RATE)
-
-            # Turn off
-            led_array = create_led_array(BLACK, NUM_LEDS)
-            send_color_array(led_array)
-            time.sleep(FLASH_RATE)
+    return state
 
 
-def crazy_strobe(iterations):
+def crazy_strobe_frame(state):
     """
-    Divide the LED strand into 10 segments and violently flash 3 segments at a time
+    Divide the LED strand into 10 segments and violently flash 3 segments at a time (single frame).
     in a strobe-like fashion for 500ms, then switch to different segments.
 
     Args:
-        iterations: Number of times to repeat the strobe cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'phase': 'on', 'flash': 0, 'segments_to_light': None}
+
     NUM_SEGMENTS = 10
     SEGMENT_SIZE = NUM_LEDS // NUM_SEGMENTS
     SEGMENTS_TO_FLASH = 3
-    STROBE_DURATION = 0.5  # seconds
-    STROBE_RATE = 0.05  # seconds between strobe flashes
+    FLASH_DURATION_FRAMES = 10  # 0.5 seconds / 0.05 seconds per flash
     WHITE = [255, 255, 255]
     BLACK = [0, 0, 0]
 
-    flash_count = int(STROBE_DURATION / STROBE_RATE)
+    # Initialize segments on new cycle
+    if state['segments_to_light'] is None or (state['flash'] == 0 and state['phase'] == 'on'):
+        state['segments_to_light'] = random.sample(range(NUM_SEGMENTS), SEGMENTS_TO_FLASH)
 
-    for cycle in range(iterations):
-        # Select 3 random segments to flash
-        segments_to_light = random.sample(range(NUM_SEGMENTS), SEGMENTS_TO_FLASH)
+    if state['phase'] == 'on':
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        for segment_index in state['segments_to_light']:
+            segment_start = segment_index * SEGMENT_SIZE
+            segment_end = min(segment_start + SEGMENT_SIZE, NUM_LEDS)
+            for led_index in range(segment_start, segment_end):
+                set_led_color(led_array, led_index, WHITE)
+        send_color_array(led_array)
+        state['phase'] = 'off'
+    else:
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        send_color_array(led_array)
+        state['flash'] += 1
+        if state['flash'] >= FLASH_DURATION_FRAMES:
+            state['flash'] = 0
+            state['cycle'] += 1
+        state['phase'] = 'on'
 
-        for flash in range(flash_count):
-            led_array = create_led_array(BLACK, NUM_LEDS)
-
-            # Flash the selected segments
-            for segment_index in segments_to_light:
-                segment_start = segment_index * SEGMENT_SIZE
-                segment_end = min(segment_start + SEGMENT_SIZE, NUM_LEDS)
-
-                for led_index in range(segment_start, segment_end):
-                    set_led_color(led_array, led_index, WHITE)
-
-            send_color_array(led_array)
-            time.sleep(STROBE_RATE)
-
-            # Turn off
-            led_array = create_led_array(BLACK, NUM_LEDS)
-            send_color_array(led_array)
-            time.sleep(STROBE_RATE)
+    return state
 
 
-def crazy_race(iterations):
+def crazy_race_frame(state):
     """
-    Two colors race from opposite ends of the strand, meeting in the middle.
+    Two colors race from opposite ends of the strand, meeting in the middle (single frame).
     Creates a high-speed collision effect with rapid color changes.
 
     Args:
-        iterations: Number of times to repeat the race cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'phase': 'race', 'position': 0, 'collision_frame': 0}
+
     RED = [255, 0, 0]
     BLUE = [0, 0, 255]
     BLACK = [0, 0, 0]
-    RACE_SPEED = 0.03  # seconds per LED position
-    FLASH_DELAY = 0.08  # delay to allow LEDs to turn off
+    COLLISION_FRAMES = 8  # 0.08 seconds * 100 frames per second
+    MID_POINT = NUM_LEDS // 2
 
-    for cycle in range(iterations):
-        # Race from both ends to the middle
-        for position in range(NUM_LEDS // 2 + 1):
-            led_array = create_led_array(BLACK, NUM_LEDS)
-
-            # Red from top (LED 0)
-            if position < NUM_LEDS:
-                set_led_color(led_array, position, RED)
-
-            # Blue from bottom (LED 99)
-            bottom_pos = NUM_LEDS - 1 - position
-            if bottom_pos >= 0:
-                set_led_color(led_array, bottom_pos, BLUE)
-
-            send_color_array(led_array)
-            time.sleep(RACE_SPEED)
-
-        # Flash collision in middle
+    if state['phase'] == 'race':
         led_array = create_led_array(BLACK, NUM_LEDS)
-        mid_point = NUM_LEDS // 2
+        if state['position'] < NUM_LEDS:
+            set_led_color(led_array, state['position'], RED)
+        bottom_pos = NUM_LEDS - 1 - state['position']
+        if bottom_pos >= 0:
+            set_led_color(led_array, bottom_pos, BLUE)
+        send_color_array(led_array)
+
+        state['position'] += 1
+        if state['position'] > MID_POINT:
+            state['phase'] = 'collision'
+            state['position'] = 0
+    elif state['phase'] == 'collision':
+        led_array = create_led_array(BLACK, NUM_LEDS)
         for i in range(-2, 3):
-            if 0 <= mid_point + i < NUM_LEDS:
-                set_led_color(led_array, mid_point + i, [255, 0, 255])  # Magenta collision
+            if 0 <= MID_POINT + i < NUM_LEDS:
+                set_led_color(led_array, MID_POINT + i, [255, 0, 255])  # Magenta collision
         send_color_array(led_array)
-        time.sleep(FLASH_DELAY)
-
-        # Turn off
+        state['collision_frame'] += 1
+        if state['collision_frame'] >= COLLISION_FRAMES:
+            state['phase'] = 'off'
+            state['collision_frame'] = 0
+    else:  # phase == 'off'
         led_array = create_led_array(BLACK, NUM_LEDS)
         send_color_array(led_array)
-        time.sleep(FLASH_DELAY)
+        state['collision_frame'] += 1
+        if state['collision_frame'] >= COLLISION_FRAMES:
+            state['cycle'] += 1
+            state['phase'] = 'race'
+            state['collision_frame'] = 0
+
+    return state
 
 
-def crazy_pulse(iterations):
+def crazy_pulse_frame(state):
     """
-    Expanding and contracting pulses of color from the center of the strand.
+    Expanding and contracting pulses of color from the center of the strand (single frame).
     Multiple pulses overlap creating a chaotic wave effect.
 
     Args:
-        iterations: Number of times to repeat the pulse cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'phase': 'expand', 'radius': 0}
+
     COLORS = [
         [255, 0, 0],      # Red
         [0, 255, 0],      # Green
@@ -578,62 +698,65 @@ def crazy_pulse(iterations):
         [0, 255, 255]     # Cyan
     ]
     BLACK = [0, 0, 0]
-    PULSE_SPEED = 0.02  # seconds per expansion step
     CENTER = NUM_LEDS // 2
     MAX_RADIUS = NUM_LEDS // 2
 
-    for cycle in range(iterations):
-        color = COLORS[cycle % len(COLORS)]
+    color = COLORS[state['cycle'] % len(COLORS)]
+    led_array = create_led_array(BLACK, NUM_LEDS)
 
-        # Expand from center
-        for radius in range(MAX_RADIUS + 1):
-            led_array = create_led_array(BLACK, NUM_LEDS)
+    if state['phase'] == 'expand':
+        for offset in range(-state['radius'], state['radius'] + 1):
+            led_pos = CENTER + offset
+            if 0 <= led_pos < NUM_LEDS:
+                distance = abs(offset)
+                brightness = max(0, 255 - (distance * 20))
+                faded_color = [
+                    min(255, int(color[0] * brightness / 255)),
+                    min(255, int(color[1] * brightness / 255)),
+                    min(255, int(color[2] * brightness / 255))
+                ]
+                set_led_color(led_array, led_pos, faded_color)
+        send_color_array(led_array)
+        state['radius'] += 1
+        if state['radius'] > MAX_RADIUS:
+            state['phase'] = 'contract'
+            state['radius'] = MAX_RADIUS
+    else:  # contract
+        for offset in range(-state['radius'], state['radius'] + 1):
+            led_pos = CENTER + offset
+            if 0 <= led_pos < NUM_LEDS:
+                distance = abs(offset)
+                brightness = max(0, 255 - (distance * 20))
+                faded_color = [
+                    min(255, int(color[0] * brightness / 255)),
+                    min(255, int(color[1] * brightness / 255)),
+                    min(255, int(color[2] * brightness / 255))
+                ]
+                set_led_color(led_array, led_pos, faded_color)
+        send_color_array(led_array)
+        state['radius'] -= 1
+        if state['radius'] < 0:
+            state['cycle'] += 1
+            state['phase'] = 'expand'
+            state['radius'] = 0
 
-            # Draw expanding circle
-            for offset in range(-radius, radius + 1):
-                led_pos = CENTER + offset
-                if 0 <= led_pos < NUM_LEDS:
-                    # Fade brightness based on distance from center
-                    distance = abs(offset)
-                    brightness = max(0, 255 - (distance * 20))
-                    faded_color = [
-                        min(255, int(color[0] * brightness / 255)),
-                        min(255, int(color[1] * brightness / 255)),
-                        min(255, int(color[2] * brightness / 255))
-                    ]
-                    set_led_color(led_array, led_pos, faded_color)
-
-            send_color_array(led_array)
-            time.sleep(PULSE_SPEED)
-
-        # Contract back
-        for radius in range(MAX_RADIUS, -1, -1):
-            led_array = create_led_array(BLACK, NUM_LEDS)
-
-            for offset in range(-radius, radius + 1):
-                led_pos = CENTER + offset
-                if 0 <= led_pos < NUM_LEDS:
-                    distance = abs(offset)
-                    brightness = max(0, 255 - (distance * 20))
-                    faded_color = [
-                        min(255, int(color[0] * brightness / 255)),
-                        min(255, int(color[1] * brightness / 255)),
-                        min(255, int(color[2] * brightness / 255))
-                    ]
-                    set_led_color(led_array, led_pos, faded_color)
-
-            send_color_array(led_array)
-            time.sleep(PULSE_SPEED)
+    return state
 
 
-def crazy_rainbow_chase(iterations):
+def crazy_rainbow_chase_frame(state):
     """
-    Rapid rainbow colors chasing each other across the strand.
+    Rapid rainbow colors chasing each other across the strand (single frame).
     Multiple color bands move at different speeds creating a chaotic rainbow effect.
 
     Args:
-        iterations: Number of times to repeat the chase cycle
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'step': 0}
+
     RAINBOW_COLORS = [
         [255, 0, 0],      # Red
         [255, 127, 0],    # Orange
@@ -644,37 +767,47 @@ def crazy_rainbow_chase(iterations):
         [148, 0, 211]     # Violet
     ]
     BLACK = [0, 0, 0]
-    CHASE_SPEED = 0.04  # seconds per step
     BAND_WIDTH = 8  # LEDs per color band
     NUM_BANDS = 3  # Number of overlapping bands
+    MAX_STEPS = NUM_LEDS + BAND_WIDTH * NUM_BANDS
 
-    for cycle in range(iterations):
-        for step in range(NUM_LEDS + BAND_WIDTH * NUM_BANDS):
-            led_array = create_led_array(BLACK, NUM_LEDS)
+    led_array = create_led_array(BLACK, NUM_LEDS)
 
-            # Draw multiple overlapping bands
-            for band in range(NUM_BANDS):
-                band_start = step - (band * BAND_WIDTH * 2)
-                color_index = (band + cycle) % len(RAINBOW_COLORS)
-                color = RAINBOW_COLORS[color_index]
+    # Draw multiple overlapping bands
+    for band in range(NUM_BANDS):
+        band_start = state['step'] - (band * BAND_WIDTH * 2)
+        color_index = (band + state['cycle']) % len(RAINBOW_COLORS)
+        color = RAINBOW_COLORS[color_index]
 
-                for i in range(BAND_WIDTH):
-                    led_pos = band_start + i
-                    if 0 <= led_pos < NUM_LEDS:
-                        set_led_color(led_array, led_pos, color)
+        for i in range(BAND_WIDTH):
+            led_pos = band_start + i
+            if 0 <= led_pos < NUM_LEDS:
+                set_led_color(led_array, led_pos, color)
 
-            send_color_array(led_array)
-            time.sleep(CHASE_SPEED)
+    send_color_array(led_array)
+
+    state['step'] += 1
+    if state['step'] >= MAX_STEPS:
+        state['step'] = 0
+        state['cycle'] += 1
+
+    return state
 
 
-def crazy_chaos(iterations):
+def crazy_chaos_frame(state):
     """
-    Random segments flash violently in different colors creating pure chaos.
+    Random segments flash violently in different colors creating pure chaos (single frame).
     Each segment gets a random color and flashes rapidly.
 
     Args:
-        iterations: Number of chaos cycles
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'phase': 'on', 'flash': 0, 'segment_colors': None}
+
     COLORS = [
         [255, 0, 0],      # Red
         [0, 255, 0],      # Green
@@ -687,46 +820,49 @@ def crazy_chaos(iterations):
     BLACK = [0, 0, 0]
     NUM_SEGMENTS = 20
     SEGMENT_SIZE = NUM_LEDS // NUM_SEGMENTS
-    FLASH_DURATION = 0.15  # seconds per flash
-    FLASH_RATE = 0.06  # seconds between flashes
+    FLASH_DURATION_FRAMES = 3  # 0.15 seconds / 0.05 seconds per frame
 
-    flash_count = int(FLASH_DURATION / FLASH_RATE)
+    # Initialize segment colors on new cycle
+    if state['segment_colors'] is None or (state['flash'] == 0 and state['phase'] == 'on'):
+        state['segment_colors'] = [random.choice(COLORS) for _ in range(NUM_SEGMENTS)]
 
-    for cycle in range(iterations):
-        # Assign random colors to each segment
-        segment_colors = [random.choice(COLORS) for _ in range(NUM_SEGMENTS)]
+    if state['phase'] == 'on':
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        segments_to_flash = random.sample(range(NUM_SEGMENTS), NUM_SEGMENTS // 2)
+        for segment_index in segments_to_flash:
+            segment_start = segment_index * SEGMENT_SIZE
+            segment_end = min(segment_start + SEGMENT_SIZE, NUM_LEDS)
+            color = state['segment_colors'][segment_index]
+            for led_index in range(segment_start, segment_end):
+                set_led_color(led_array, led_index, color)
+        send_color_array(led_array)
+        state['phase'] = 'off'
+    else:
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        send_color_array(led_array)
+        state['flash'] += 1
+        if state['flash'] >= FLASH_DURATION_FRAMES:
+            state['flash'] = 0
+            state['cycle'] += 1
+        state['phase'] = 'on'
 
-        for flash in range(flash_count):
-            led_array = create_led_array(BLACK, NUM_LEDS)
-
-            # Flash random segments
-            segments_to_flash = random.sample(range(NUM_SEGMENTS), NUM_SEGMENTS // 2)
-
-            for segment_index in segments_to_flash:
-                segment_start = segment_index * SEGMENT_SIZE
-                segment_end = min(segment_start + SEGMENT_SIZE, NUM_LEDS)
-                color = segment_colors[segment_index]
-
-                for led_index in range(segment_start, segment_end):
-                    set_led_color(led_array, led_index, color)
-
-            send_color_array(led_array)
-            time.sleep(FLASH_RATE)
-
-            # Turn off
-            led_array = create_led_array(BLACK, NUM_LEDS)
-            send_color_array(led_array)
-            time.sleep(FLASH_RATE)
+    return state
 
 
-def crazy_meteor(iterations):
+def crazy_meteor_frame(state):
     """
-    Multiple meteors of different colors shoot across the strand simultaneously.
+    Multiple meteors of different colors shoot across the strand simultaneously (single frame).
     Each meteor has a bright head and fading tail creating a streaking effect.
 
     Args:
-        iterations: Number of meteor cycles
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {'cycle': 0, 'step': 0, 'meteors': None, 'pause_frame': 0}
+
     METEOR_COLORS = [
         [255, 100, 50],   # Orange
         [100, 255, 255],  # Cyan
@@ -738,51 +874,53 @@ def crazy_meteor(iterations):
     BLACK = [0, 0, 0]
     NUM_METEORS = 4
     METEOR_LENGTH = 12  # LEDs in meteor tail
-    METEOR_SPEED = 0.05  # seconds per position
-    FLASH_DELAY = 0.1  # delay between cycles
+    MAX_STEPS = NUM_LEDS + METEOR_LENGTH
+    PAUSE_FRAMES = 2  # 0.1 seconds / 0.05 seconds per frame
 
-    for cycle in range(iterations):
-        # Create meteors at random starting positions
-        meteors = []
+    # Initialize meteors on new cycle
+    if state['meteors'] is None or (state['step'] == 0 and state['pause_frame'] == 0):
+        state['meteors'] = []
         for _ in range(NUM_METEORS):
             start_pos = random.randint(-METEOR_LENGTH, NUM_LEDS)
             color = random.choice(METEOR_COLORS)
             direction = random.choice([1, -1])  # 1 = left to right, -1 = right to left
-            meteors.append({
+            state['meteors'].append({
                 'pos': start_pos,
                 'color': color,
                 'direction': direction
             })
 
-        # Animate meteors moving
-        for step in range(NUM_LEDS + METEOR_LENGTH):
-            led_array = create_led_array(BLACK, NUM_LEDS)
-
-            for meteor in meteors:
-                # Update meteor position
-                meteor['pos'] += meteor['direction']
-
-                # Draw meteor with fading tail
-                for i in range(METEOR_LENGTH):
-                    led_pos = meteor['pos'] - (i * meteor['direction'])
-
-                    if 0 <= led_pos < NUM_LEDS:
-                        # Fade brightness from head to tail
-                        brightness = 1.0 - (i / METEOR_LENGTH)
-                        faded_color = [
-                            int(meteor['color'][0] * brightness),
-                            int(meteor['color'][1] * brightness),
-                            int(meteor['color'][2] * brightness)
-                        ]
-                        set_led_color(led_array, led_pos, faded_color)
-
-            send_color_array(led_array)
-            time.sleep(METEOR_SPEED)
-
-        # Brief pause between cycles
+    if state['pause_frame'] > 0:
         led_array = create_led_array(BLACK, NUM_LEDS)
         send_color_array(led_array)
-        time.sleep(FLASH_DELAY)
+        state['pause_frame'] += 1
+        if state['pause_frame'] >= PAUSE_FRAMES:
+            state['pause_frame'] = 0
+            state['step'] = 0
+            state['cycle'] += 1
+            state['meteors'] = None  # Reset for next cycle
+    else:
+        led_array = create_led_array(BLACK, NUM_LEDS)
+        for meteor in state['meteors']:
+            # Update meteor position
+            meteor['pos'] += meteor['direction']
+            # Draw meteor with fading tail
+            for i in range(METEOR_LENGTH):
+                led_pos = meteor['pos'] - (i * meteor['direction'])
+                if 0 <= led_pos < NUM_LEDS:
+                    brightness = 1.0 - (i / METEOR_LENGTH)
+                    faded_color = [
+                        int(meteor['color'][0] * brightness),
+                        int(meteor['color'][1] * brightness),
+                        int(meteor['color'][2] * brightness)
+                    ]
+                    set_led_color(led_array, led_pos, faded_color)
+        send_color_array(led_array)
+        state['step'] += 1
+        if state['step'] >= MAX_STEPS:
+            state['pause_frame'] = 1
+
+    return state
 
 
 def test_color_comparison():
@@ -819,70 +957,176 @@ def is_daytime():
     return now.hour >= DAYTIME_START_HOUR
 
 
-def run_daytime_animations():
-    """Run gentler animations suitable for daytime viewing."""
-    if get_current_mode() != 'force_day' and get_current_mode() != 'timemode':
-        return
-    animate_orange_wave(60)
-    if get_current_mode() != 'force_day' and get_current_mode() != 'timemode':
-        return
-    animate_slow_sparkle(1800)
-
-
-def run_nighttime_animations():
-    """Run more active animations suitable for nighttime viewing."""
-    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
-        return
-    animate_white_wave(60)
-    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
-        return
-    animate_sparkle(1800)
-    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
-        return
-    animate_random_colors(400)
-    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
-        return
-    animate_gradient_wave_no_blue(8)
-    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
-        return
-    animate_sparkle(1000)
-
-
-def animate_crazy_mode(iterations):
+def run_daytime_frame(state):
     """
-    Cycle through all crazy animation patterns in sequence.
-    Creates an intense, chaotic light show.
-    Checks mode periodically to allow interruption.
+    Run gentler animations suitable for daytime viewing (single frame).
+    Cycles through orange wave and slow sparkle animations.
 
     Args:
-        iterations: Number of times to cycle through all crazy animations
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
     """
+    if state is None:
+        state = {
+            'sequence_index': 0,
+            'animation_state': None,
+            'frame_count': 0
+        }
+
+    # Orange wave: 60 cycles * 100 positions = 6000 frames
+    # Slow sparkle: 1800 frames (but with pauses, so longer)
     animations = [
-        (crazy_police, 5),
-        (crazy_strobe, 10),
-        (crazy_race, 8),
-        (crazy_pulse, 6),
-        (crazy_rainbow_chase, 5),
-        (crazy_chaos, 8),
-        (crazy_meteor, 6)
+        (animate_orange_wave_frame, 6000, 'Orange Wave'),  # 60 cycles
+        (animate_slow_sparkle_frame, 18000, 'Slow Sparkle')   # 1800 frames with pauses
     ]
 
-    for cycle in range(iterations):
-        # Check mode before each cycle
-        if get_current_mode() != 'force_crazy':
-            logger.info("Mode changed, interrupting crazy mode animation")
-            break
+    # Check for navigation request
+    nav_request = get_navigation_request()
+    if nav_request == 'next':
+        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+        state['animation_state'] = None
+        state['frame_count'] = 0
+    elif nav_request == 'previous':
+        new_index = state['sequence_index'] - 1
+        state['sequence_index'] = new_index if new_index >= 0 else len(animations) - 1
+        state['animation_state'] = None
+        state['frame_count'] = 0
 
-        for anim_func, anim_iterations in animations:
-            # Check mode before each animation
-            if get_current_mode() != 'force_crazy':
-                logger.info("Mode changed, interrupting crazy mode animation")
-                return
-            anim_func(anim_iterations)
+    anim_func, max_frames, func_name = animations[state['sequence_index']]
+    set_current_function_name(func_name)
+
+    # Run current animation frame
+    state['animation_state'] = anim_func(state['animation_state'])
+    state['frame_count'] += 1
+
+    # Check if animation is complete
+    if state['frame_count'] >= max_frames:
+        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+        state['animation_state'] = None
+        state['frame_count'] = 0
+
+    return state
+
+
+def run_nighttime_frame(state):
+    """
+    Run more active animations suitable for nighttime viewing (single frame).
+    Cycles through multiple animations.
+
+    Args:
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
+    """
+    if state is None:
+        state = {
+            'sequence_index': 0,
+            'animation_state': None,
+            'frame_count': 0
+        }
+
+    # Calculate approximate frame counts
+    animations = [
+        (animate_white_wave_frame, 6000, 'White Wave'),              # 60 cycles * 100 positions
+        (animate_sparkle_frame, 1800, 'Sparkle'),                  # 1800 frames
+        (animate_random_colors_frame, 400, 'Random Colors'),              # 400 frames
+        (animate_gradient_wave_no_blue_frame, 3344, 'Gradient Wave'),    # 8 cycles * 418 steps
+        (animate_sparkle_frame, 1000, 'Sparkle')                   # 1000 frames
+    ]
+
+    # Check for navigation request
+    nav_request = get_navigation_request()
+    if nav_request == 'next':
+        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+        state['animation_state'] = None
+        state['frame_count'] = 0
+    elif nav_request == 'previous':
+        new_index = state['sequence_index'] - 1
+        state['sequence_index'] = new_index if new_index >= 0 else len(animations) - 1
+        state['animation_state'] = None
+        state['frame_count'] = 0
+
+    anim_func, max_frames, func_name = animations[state['sequence_index']]
+    set_current_function_name(func_name)
+
+    # Run current animation frame
+    state['animation_state'] = anim_func(state['animation_state'])
+    state['frame_count'] += 1
+
+    # Check if animation is complete
+    if state['frame_count'] >= max_frames:
+        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+        state['animation_state'] = None
+        state['frame_count'] = 0
+
+    return state
+
+
+def animate_crazy_frame(state):
+    """
+    Cycle through all crazy animation patterns in sequence (single frame).
+    Creates an intense, chaotic light show.
+
+    Args:
+        state: Animation state dictionary or None to initialize
+
+    Returns:
+        Updated state dictionary
+    """
+    if state is None:
+        state = {
+            'sequence_index': 0,
+            'animation_state': None,
+            'frame_count': 0,
+            'cycle': 0
+        }
+
+    animations = [
+        (crazy_police_frame, 50, 'Police Lights'),      # 5 cycles * 10 frames per cycle
+        (crazy_strobe_frame, 200, 'Strobe'),     # 10 cycles * 20 frames per cycle
+        (crazy_race_frame, 200, 'Color Race'),       # 8 cycles * 25 frames per cycle
+        (crazy_pulse_frame, 200, 'Pulse'),      # 6 cycles * ~33 frames per cycle
+        (crazy_rainbow_chase_frame, 200, 'Rainbow Chase'),  # 5 cycles * 40 frames per cycle
+        (crazy_chaos_frame, 240, 'Chaos'),      # 8 cycles * 30 frames per cycle
+        (crazy_meteor_frame, 200, 'Meteors')      # 6 cycles * ~33 frames per cycle
+    ]
+
+    # Check for navigation request
+    nav_request = get_navigation_request()
+    if nav_request == 'next':
+        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+        state['animation_state'] = None
+        state['frame_count'] = 0
+    elif nav_request == 'previous':
+        new_index = state['sequence_index'] - 1
+        state['sequence_index'] = new_index if new_index >= 0 else len(animations) - 1
+        state['animation_state'] = None
+        state['frame_count'] = 0
+
+    anim_func, max_frames, func_name = animations[state['sequence_index']]
+    set_current_function_name(func_name)
+
+    # Run current animation frame
+    state['animation_state'] = anim_func(state['animation_state'])
+    state['frame_count'] += 1
+
+    # Check if animation is complete (approximate based on frame count)
+    if state['frame_count'] >= max_frames:
+        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+        state['animation_state'] = None
+        state['frame_count'] = 0
+        if state['sequence_index'] == 0:
+            state['cycle'] += 1
+
+    return state
 
 # Thread-safe mode management
 _mode_lock = threading.Lock()
 _current_mode = 'timemode'  # available modes: timemode, force_night, force_day, force_crazy
+_previous_mode = None  # Track mode changes for state reset
 
 def get_current_mode():
     """Get the current animation mode in a thread-safe manner."""
@@ -898,22 +1142,117 @@ def set_current_mode(mode):
     Returns:
         True if mode was set, False if defaulted to 'timemode'
     """
-    global _current_mode
+    global _current_mode, _previous_mode
     valid_modes = ['timemode', 'force_night', 'force_day', 'force_crazy']
-    if mode in valid_modes:
-        with _mode_lock:
+    with _mode_lock:
+        _previous_mode = _current_mode
+        if mode in valid_modes:
             _current_mode = mode
-        return True
-    else:
-        # Default to timemode if invalid mode provided
-        with _mode_lock:
+            # Reset animation state if mode changed
+            if _previous_mode != _current_mode:
+                reset_animation_state()
+            return True
+        else:
+            # Default to timemode if invalid mode provided
             _current_mode = 'timemode'
-        logger.warning(f"Invalid mode '{mode}' provided, defaulting to 'timemode'")
-        return False
+            if _previous_mode != _current_mode:
+                reset_animation_state()
+            logger.warning(f"Invalid mode '{mode}' provided, defaulting to 'timemode'")
+            return False
+
+# Animation state management
+_animation_state_lock = threading.Lock()
+_animation_state = None
+
+def get_animation_state():
+    """Get the current animation state in a thread-safe manner."""
+    with _animation_state_lock:
+        return _animation_state
+
+def set_animation_state(state):
+    """Set the current animation state in a thread-safe manner."""
+    with _animation_state_lock:
+        global _animation_state
+        _animation_state = state
+
+def reset_animation_state():
+    """Reset animation state when mode changes."""
+    with _animation_state_lock:
+        global _animation_state
+        _animation_state = None
+        set_current_function_name("Initializing...")
+        logger.info("Animation state reset due to mode change")
+
+# Function name tracking
+_function_name_lock = threading.Lock()
+_current_function_name = "Initializing..."
+
+def get_current_function_name():
+    """Get the current animation function name in a thread-safe manner."""
+    with _function_name_lock:
+        return _current_function_name
+
+def set_current_function_name(name):
+    """Set the current animation function name in a thread-safe manner."""
+    with _function_name_lock:
+        global _current_function_name
+        if _current_function_name != name:
+            _current_function_name = name
+
+# Function name mapping for all animations
+FUNCTION_NAMES = {
+    # Daytime animations
+    'animate_orange_wave_frame': 'Orange Wave',
+    'animate_slow_sparkle_frame': 'Slow Sparkle',
+
+    # Nighttime animations
+    'animate_white_wave_frame': 'White Wave',
+    'animate_sparkle_frame': 'Sparkle',
+    'animate_random_colors_frame': 'Random Colors',
+    'animate_gradient_wave_no_blue_frame': 'Gradient Wave',
+
+    # Crazy animations
+    'crazy_police_frame': 'Police Lights',
+    'crazy_strobe_frame': 'Strobe',
+    'crazy_race_frame': 'Color Race',
+    'crazy_pulse_frame': 'Pulse',
+    'crazy_rainbow_chase_frame': 'Rainbow Chase',
+    'crazy_chaos_frame': 'Chaos',
+    'crazy_meteor_frame': 'Meteors',
+
+    # Other animations (if used)
+    'animate_rotating_colors_frame': 'Rotating Colors',
+    'animate_solid_color_cycle_frame': 'Solid Color Cycle',
+    'animate_color_chase_frame': 'Color Chase',
+    'animate_gradient_wave_frame': 'Gradient Wave Full',
+}
+
+# Navigation control
+_navigation_lock = threading.Lock()
+_navigation_request = None  # 'next', 'previous', or None
+
+def get_navigation_request():
+    """Get and clear navigation request in a thread-safe manner."""
+    with _navigation_lock:
+        global _navigation_request
+        request = _navigation_request
+        _navigation_request = None
+        return request
+
+def set_navigation_request(direction):
+    """Set navigation request in a thread-safe manner.
+
+    Args:
+        direction: 'next' or 'previous'
+    """
+    with _navigation_lock:
+        global _navigation_request
+        _navigation_request = direction
 
 
 # Flask web server
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 @app.route('/')
 def index():
@@ -925,6 +1264,7 @@ def index():
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Christmas Tree LED Control</title>
+        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
         <style>
             * {
                 margin: 0;
@@ -977,6 +1317,59 @@ def index():
                 grid-template-columns: 1fr 1fr;
                 gap: 15px;
                 margin-top: 20px;
+            }
+
+            .function-display {
+                text-align: center;
+                margin-top: 30px;
+                padding: 15px;
+                background: rgba(102, 126, 234, 0.1);
+                border-radius: 10px;
+                min-height: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .function-name {
+                font-size: 18px;
+                font-weight: 600;
+                color: #333;
+            }
+
+            .navigation-controls {
+                display: flex;
+                justify-content: center;
+                gap: 15px;
+                margin-top: 20px;
+            }
+
+            .nav-button {
+                padding: 12px 24px;
+                border: none;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+                min-width: 120px;
+            }
+
+            .nav-button:hover:not(:disabled) {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            }
+
+            .nav-button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+
+            .nav-button:active:not(:disabled) {
+                transform: translateY(0);
             }
 
             .mode-button {
@@ -1081,9 +1474,41 @@ def index():
                 <button class="mode-button force_day" onclick="setMode('force_day')">Force Day</button>
                 <button class="mode-button force_crazy" onclick="setMode('force_crazy')">Force Crazy</button>
             </div>
+            <div class="function-display">
+                <div class="function-name" id="function-name">Loading...</div>
+            </div>
+            <div class="navigation-controls">
+                <button class="nav-button" id="rewind-btn" onclick="skipPrevious()">⏮ Previous</button>
+                <button class="nav-button" id="forward-btn" onclick="skipNext()">Next ⏭</button>
+            </div>
         </div>
 
         <script>
+            // WebSocket connection
+            const socket = io();
+            let isConnected = false;
+
+            socket.on('connect', function() {
+                console.log('WebSocket connected');
+                isConnected = true;
+            });
+
+            socket.on('disconnect', function() {
+                console.log('WebSocket disconnected');
+                isConnected = false;
+                document.getElementById('function-name').textContent = 'Disconnected';
+            });
+
+            socket.on('function_name_update', function(data) {
+                document.getElementById('function-name').textContent = data.function_name || 'Unknown';
+            });
+
+            socket.on('navigation_response', function(data) {
+                if (data.success) {
+                    console.log('Navigation:', data.message);
+                }
+            });
+
             function updateCurrentMode() {
                 fetch('/api/mode')
                     .then(response => response.json())
@@ -1127,6 +1552,18 @@ def index():
                 });
             }
 
+            function skipNext() {
+                if (isConnected) {
+                    socket.emit('skip_next');
+                }
+            }
+
+            function skipPrevious() {
+                if (isConnected) {
+                    socket.emit('skip_previous');
+                }
+            }
+
             // Update mode on page load
             updateCurrentMode();
 
@@ -1137,6 +1574,37 @@ def index():
     </html>
     """
     return html
+
+@socketio.on('connect')
+def handle_connect():
+    """Handle WebSocket client connection."""
+    logger.info("WebSocket client connected")
+    emit('function_name_update', {'function_name': get_current_function_name()})
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    """Handle WebSocket client disconnection."""
+    logger.info("WebSocket client disconnected")
+
+@socketio.on('skip_next')
+def handle_skip_next():
+    """Handle skip to next animation request."""
+    set_navigation_request('next')
+    emit('navigation_response', {'success': True, 'message': 'Skipping to next animation'})
+
+@socketio.on('skip_previous')
+def handle_skip_previous():
+    """Handle skip to previous animation request."""
+    set_navigation_request('previous')
+    emit('navigation_response', {'success': True, 'message': 'Skipping to previous animation'})
+
+def broadcast_function_name():
+    """Broadcast current function name to all connected WebSocket clients."""
+    try:
+        function_name = get_current_function_name()
+        socketio.emit('function_name_update', {'function_name': function_name})
+    except Exception as e:
+        logger.error(f"Error broadcasting function name: {e}")
 
 @app.route('/api/mode', methods=['GET'])
 def get_mode():
@@ -1184,10 +1652,10 @@ def set_mode():
         })
 
 def start_web_server():
-    """Start the Flask web server in a separate thread."""
+    """Start the Flask web server with WebSocket support in a separate thread."""
     try:
-        logger.info("Starting web server on port 80...")
-        app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
+        logger.info("Starting web server with WebSocket support on port 80...")
+        socketio.run(app, host='0.0.0.0', port=80, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
     except OSError as e:
         if e.errno == 98:  # Address already in use
             logger.error(f"Port 80 is already in use. Error: {e}")
@@ -1221,19 +1689,47 @@ try:
 except Exception as e:
     logger.error(f"Failed to start web server thread: {e}")
 
+# Global animation loop - single iteration per cycle
+FRAME_DELAY = 0.01  # 10ms per frame = ~100 FPS
+BROADCAST_INTERVAL = 10  # Broadcast every 10 frames (0.1 seconds)
+_broadcast_counter = 0
+_last_broadcasted_function_name = None
+
 while True:
     mode = get_current_mode()
+    state = get_animation_state()
 
+    # Reset state if mode changed
+    if state is not None and state.get('last_mode') != mode:
+        state = None
+        reset_animation_state()
+        set_current_function_name("Initializing...")
+
+    # Select animation function based on mode
     if mode == 'timemode':
-        # this is time modes
         if is_daytime():
-            run_daytime_animations()
+            state = run_daytime_frame(state)
         else:
-            run_nighttime_animations()
-
+            state = run_nighttime_frame(state)
     elif mode == 'force_night':
-        run_nighttime_animations()
+        state = run_nighttime_frame(state)
     elif mode == 'force_day':
-        run_daytime_animations()
+        state = run_daytime_frame(state)
     elif mode == 'force_crazy':
-        animate_crazy_mode(1000)
+        state = animate_crazy_frame(state)
+
+    # Store mode in state for change detection
+    if state is not None:
+        state['last_mode'] = mode
+
+    set_animation_state(state)
+
+    # Broadcast function name updates (throttled)
+    _broadcast_counter += 1
+    current_function_name = get_current_function_name()
+    if _broadcast_counter >= BROADCAST_INTERVAL or current_function_name != _last_broadcasted_function_name:
+        broadcast_function_name()
+        _last_broadcasted_function_name = current_function_name
+        _broadcast_counter = 0
+
+    time.sleep(FRAME_DELAY)
