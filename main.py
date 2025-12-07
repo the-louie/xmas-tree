@@ -1193,11 +1193,13 @@ def run_daytime_frame(state):
     state['animation_state'] = anim_func(state['animation_state'])
     state['frame_count'] += 1
 
-    # Check if animation is complete
+    # Check if animation is complete (only advance if not paused)
     if state['frame_count'] >= max_frames:
-        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
-        state['animation_state'] = None
-        state['frame_count'] = 0
+        if not get_pause_state():
+            state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+            state['animation_state'] = None
+            state['frame_count'] = 0
+        # When paused, animation continues running but sequence doesn't advance
 
     return state
 
@@ -1248,11 +1250,13 @@ def run_nighttime_frame(state):
     state['animation_state'] = anim_func(state['animation_state'])
     state['frame_count'] += 1
 
-    # Check if animation is complete
+    # Check if animation is complete (only advance if not paused)
     if state['frame_count'] >= max_frames:
-        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
-        state['animation_state'] = None
-        state['frame_count'] = 0
+        if not get_pause_state():
+            state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+            state['animation_state'] = None
+            state['frame_count'] = 0
+        # When paused, animation continues running but sequence doesn't advance
 
     return state
 
@@ -1306,12 +1310,15 @@ def animate_crazy_frame(state):
     state['frame_count'] += 1
 
     # Check if animation is complete (approximate based on frame count)
+    # Only advance if not paused
     if state['frame_count'] >= max_frames:
-        state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
-        state['animation_state'] = None
-        state['frame_count'] = 0
-        if state['sequence_index'] == 0:
-            state['cycle'] += 1
+        if not get_pause_state():
+            state['sequence_index'] = (state['sequence_index'] + 1) % len(animations)
+            state['animation_state'] = None
+            state['frame_count'] = 0
+            if state['sequence_index'] == 0:
+                state['cycle'] += 1
+        # When paused, animation continues running but sequence doesn't advance
 
     return state
 
@@ -1441,6 +1448,41 @@ def set_navigation_request(direction):
         global _navigation_request
         _navigation_request = direction
 
+# Pause control
+_pause_lock = threading.Lock()
+_is_paused = False
+
+def get_pause_state():
+    """Get the current pause state in a thread-safe manner."""
+    with _pause_lock:
+        return _is_paused
+
+def set_pause_state(paused):
+    """Set the pause state in a thread-safe manner and broadcast to all clients.
+
+    Args:
+        paused: Boolean indicating whether to pause (True) or unpause (False)
+    """
+    global _is_paused
+    state_changed = False
+    with _pause_lock:
+        if _is_paused != paused:
+            _is_paused = paused
+            logger.info(f"Animation sequence {'paused' if paused else 'unpaused'}")
+            state_changed = True
+
+    # Broadcast outside the lock to avoid deadlock (broadcast_pause_state calls get_pause_state which needs the lock)
+    if state_changed:
+        broadcast_pause_state()
+
+def broadcast_pause_state():
+    """Broadcast current pause state to all connected WebSocket clients."""
+    try:
+        paused = get_pause_state()
+        socketio.emit('pause_state_update', {'paused': paused})
+    except Exception as e:
+        logger.error(f"Error broadcasting pause state: {e}")
+
 
 # Flask web server
 app = Flask(__name__)
@@ -1564,6 +1606,14 @@ def index():
                 transform: translateY(0);
             }
 
+            .nav-button.paused {
+                background: linear-gradient(135deg, #f5576c 0%, #f093fb 100%);
+            }
+
+            .nav-button.paused:hover:not(:disabled) {
+                background: linear-gradient(135deg, #e04459 0%, #e081e8 100%);
+            }
+
             .mode-button {
                 padding: 25px 20px;
                 border: none;
@@ -1671,6 +1721,7 @@ def index():
             </div>
             <div class="navigation-controls">
                 <button class="nav-button" id="rewind-btn" onclick="skipPrevious()">⏮ Previous</button>
+                <button class="nav-button" id="pause-btn" onclick="togglePause()">⏸ Pause</button>
                 <button class="nav-button" id="forward-btn" onclick="skipNext()">Next ⏭</button>
             </div>
         </div>
@@ -1700,6 +1751,36 @@ def index():
                     console.log('Navigation:', data.message);
                 }
             });
+
+            let isPaused = false;
+
+            socket.on('pause_state_update', function(data) {
+                isPaused = data.paused || false;
+                updatePauseButton();
+            });
+
+            function updatePauseButton() {
+                const pauseBtn = document.getElementById('pause-btn');
+                if (pauseBtn) {
+                    if (isPaused) {
+                        pauseBtn.textContent = '▶ Resume';
+                        pauseBtn.classList.add('paused');
+                    } else {
+                        pauseBtn.textContent = '⏸ Pause';
+                        pauseBtn.classList.remove('paused');
+                    }
+                }
+            }
+
+            function togglePause() {
+                if (isConnected) {
+                    if (isPaused) {
+                        socket.emit('unpause');
+                    } else {
+                        socket.emit('pause');
+                    }
+                }
+            }
 
             function updateCurrentMode() {
                 fetch('/api/mode')
@@ -1772,6 +1853,7 @@ def handle_connect():
     """Handle WebSocket client connection."""
     logger.info("WebSocket client connected")
     emit('function_name_update', {'function_name': get_current_function_name()})
+    emit('pause_state_update', {'paused': get_pause_state()})
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -1789,6 +1871,18 @@ def handle_skip_previous():
     """Handle skip to previous animation request."""
     set_navigation_request('previous')
     emit('navigation_response', {'success': True, 'message': 'Skipping to previous animation'})
+
+@socketio.on('pause')
+def handle_pause():
+    """Handle pause request."""
+    set_pause_state(True)
+    # broadcast_pause_state() is called by set_pause_state(), no need to emit here
+
+@socketio.on('unpause')
+def handle_unpause():
+    """Handle unpause request."""
+    set_pause_state(False)
+    # broadcast_pause_state() is called by set_pause_state(), no need to emit here
 
 def broadcast_function_name():
     """Broadcast current function name to all connected WebSocket clients."""
