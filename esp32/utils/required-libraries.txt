@@ -1,0 +1,4 @@
+# Required Arduino libraries for Christmas Tree LED Controller
+# Add library names here, one per line
+# Libraries will be automatically installed by the build script
+
