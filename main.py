@@ -531,7 +531,7 @@ def crazy_police_frame(state):
     RED = [255, 0, 0]
     BLUE = [0, 0, 255]
     BLACK = [0, 0, 0]
-    FLASH_DURATION_FRAMES = 10  # 1.0 seconds / 0.1 seconds per flash = 10 flashes
+    FLASH_DURATION_FRAMES = 5  # Half the original duration for twice the speed
 
     HALF_LED_COUNT = NUM_LEDS // 2
     TOP_HALF_START = 0
@@ -623,7 +623,7 @@ def crazy_strobe_frame(state):
 def crazy_race_frame(state):
     """
     Two colors race from opposite ends of the strand, meeting in the middle (single frame).
-    Creates a high-speed collision effect with rapid color changes.
+    Creates a high-speed collision effect with rapid color changes, strobe effects, and random direction changes.
 
     Args:
         state: Animation state dictionary or None to initialize
@@ -632,25 +632,68 @@ def crazy_race_frame(state):
         Updated state dictionary
     """
     if state is None:
-        state = {'cycle': 0, 'phase': 'race', 'position': 0, 'collision_frame': 0}
+        state = {
+            'cycle': 0,
+            'phase': 'race',
+            'position': 0,
+            'collision_frame': 0,
+            'direction': 1,  # 1 for forward, -1 for backward
+            'time_since_direction_change': 0,
+            'red_direction': 1,  # Direction for red (1 = forward from start, -1 = backward from end)
+            'blue_direction': -1  # Direction for blue (1 = forward from start, -1 = backward from end)
+        }
 
     RED = [255, 0, 0]
     BLUE = [0, 0, 255]
     BLACK = [0, 0, 0]
+    WHITE = [255, 255, 255]
     COLLISION_FRAMES = 8  # 0.08 seconds * 100 frames per second
     MID_POINT = NUM_LEDS // 2
+    SPEED = 3  # Move 3 positions per frame for increased speed
+    DIRECTION_CHANGE_INTERVAL = 300  # 3 seconds at 100 FPS
+
+    # Check if it's time to randomly change direction
+    state['time_since_direction_change'] += 1
+    if state['time_since_direction_change'] >= DIRECTION_CHANGE_INTERVAL:
+        # Randomly change direction for both colors
+        if random.random() < 0.5:
+            state['red_direction'] *= -1
+        if random.random() < 0.5:
+            state['blue_direction'] *= -1
+        state['time_since_direction_change'] = 0
 
     if state['phase'] == 'race':
         led_array = create_led_array(BLACK, NUM_LEDS)
-        if state['position'] < NUM_LEDS:
-            set_led_color(led_array, state['position'], RED)
-        bottom_pos = NUM_LEDS - 1 - state['position']
-        if bottom_pos >= 0:
-            set_led_color(led_array, bottom_pos, BLUE)
+
+        # Calculate positions based on direction
+        if state['red_direction'] == 1:
+            red_pos = state['position']
+        else:
+            red_pos = NUM_LEDS - 1 - state['position']
+
+        if state['blue_direction'] == 1:
+            blue_pos = state['position']
+        else:
+            blue_pos = NUM_LEDS - 1 - state['position']
+
+        # Draw racing colors
+        if 0 <= red_pos < NUM_LEDS:
+            set_led_color(led_array, red_pos, RED)
+        if 0 <= blue_pos < NUM_LEDS:
+            set_led_color(led_array, blue_pos, BLUE)
+
+        # Add random strobe effect - flash random LEDs white
+        if random.random() < 0.15:  # 15% chance per frame
+            strobe_count = random.randint(3, 8)  # Flash 3-8 random LEDs
+            for _ in range(strobe_count):
+                strobe_pos = random.randint(0, NUM_LEDS - 1)
+                if strobe_pos != red_pos and strobe_pos != blue_pos:  # Don't override racing colors
+                    set_led_color(led_array, strobe_pos, WHITE)
+
         send_color_array(led_array)
 
-        state['position'] += 1
-        if state['position'] > MID_POINT:
+        state['position'] += SPEED
+        if state['position'] > NUM_LEDS:
             state['phase'] = 'collision'
             state['position'] = 0
     elif state['phase'] == 'collision':
@@ -671,14 +714,18 @@ def crazy_race_frame(state):
             state['cycle'] += 1
             state['phase'] = 'race'
             state['collision_frame'] = 0
+            # Reset to starting positions with random directions
+            state['position'] = 0
+            state['red_direction'] = random.choice([1, -1])
+            state['blue_direction'] = random.choice([1, -1])
 
     return state
 
 
 def crazy_pulse_frame(state):
     """
-    Expanding and contracting pulses of color from the center of the strand (single frame).
-    Multiple pulses overlap creating a chaotic wave effect.
+    Fast expanding pulses from center outward, with top and bottom pulses at different intervals.
+    Top pulse every 375ms, bottom pulse every 325ms. Each pulse changes color and includes strobe effects.
 
     Args:
         state: Animation state dictionary or None to initialize
@@ -687,7 +734,14 @@ def crazy_pulse_frame(state):
         Updated state dictionary
     """
     if state is None:
-        state = {'cycle': 0, 'phase': 'expand', 'radius': 0}
+        state = {
+            'top_frame': 0,
+            'bottom_frame': 0,
+            'top_color_index': 0,
+            'bottom_color_index': 1,
+            'top_radius': 0,
+            'bottom_radius': 0
+        }
 
     COLORS = [
         [255, 0, 0],      # Red
@@ -695,50 +749,103 @@ def crazy_pulse_frame(state):
         [0, 0, 255],      # Blue
         [255, 255, 0],    # Yellow
         [255, 0, 255],    # Magenta
-        [0, 255, 255]     # Cyan
+        [0, 255, 255],    # Cyan
+        [255, 127, 0],    # Orange
+        [148, 0, 211]     # Violet
     ]
     BLACK = [0, 0, 0]
+    WHITE = [255, 255, 255]
     CENTER = NUM_LEDS // 2
     MAX_RADIUS = NUM_LEDS // 2
+    TOP_INTERVAL = 38  # 375ms at 100 FPS (0.01s per frame)
+    BOTTOM_INTERVAL = 33  # 325ms at 100 FPS
+    PULSE_SPEED = 4  # Fast expansion - 4 LEDs per frame
 
-    color = COLORS[state['cycle'] % len(COLORS)]
     led_array = create_led_array(BLACK, NUM_LEDS)
 
-    if state['phase'] == 'expand':
-        for offset in range(-state['radius'], state['radius'] + 1):
+    # Top pulse (every 375ms)
+    if state['top_frame'] >= TOP_INTERVAL:
+        # Start new pulse
+        state['top_frame'] = 0
+        state['top_radius'] = 0
+        # Change to a different color (ensure it's different from bottom)
+        new_color_index = state['top_color_index']
+        while new_color_index == state['bottom_color_index']:
+            new_color_index = random.randint(0, len(COLORS) - 1)
+        state['top_color_index'] = new_color_index
+
+    # Draw top pulse if active
+    if state['top_radius'] <= MAX_RADIUS:
+        top_color = COLORS[state['top_color_index']]
+        for offset in range(-state['top_radius'], state['top_radius'] + 1):
             led_pos = CENTER + offset
             if 0 <= led_pos < NUM_LEDS:
                 distance = abs(offset)
-                brightness = max(0, 255 - (distance * 20))
+                brightness = max(0, 255 - (distance * 3))  # Faster fade for speed
                 faded_color = [
-                    min(255, int(color[0] * brightness / 255)),
-                    min(255, int(color[1] * brightness / 255)),
-                    min(255, int(color[2] * brightness / 255))
+                    min(255, int(top_color[0] * brightness / 255)),
+                    min(255, int(top_color[1] * brightness / 255)),
+                    min(255, int(top_color[2] * brightness / 255))
                 ]
                 set_led_color(led_array, led_pos, faded_color)
-        send_color_array(led_array)
-        state['radius'] += 1
-        if state['radius'] > MAX_RADIUS:
-            state['phase'] = 'contract'
-            state['radius'] = MAX_RADIUS
-    else:  # contract
-        for offset in range(-state['radius'], state['radius'] + 1):
+        state['top_radius'] += PULSE_SPEED
+
+    state['top_frame'] += 1
+
+    # Bottom pulse (every 325ms)
+    if state['bottom_frame'] >= BOTTOM_INTERVAL:
+        # Start new pulse
+        state['bottom_frame'] = 0
+        state['bottom_radius'] = 0
+        # Change to a different color (ensure it's different from top)
+        new_color_index = state['bottom_color_index']
+        while new_color_index == state['top_color_index']:
+            new_color_index = random.randint(0, len(COLORS) - 1)
+        state['bottom_color_index'] = new_color_index
+
+    # Draw bottom pulse if active
+    if state['bottom_radius'] <= MAX_RADIUS:
+        bottom_color = COLORS[state['bottom_color_index']]
+        for offset in range(-state['bottom_radius'], state['bottom_radius'] + 1):
             led_pos = CENTER + offset
             if 0 <= led_pos < NUM_LEDS:
                 distance = abs(offset)
-                brightness = max(0, 255 - (distance * 20))
+                brightness = max(0, 255 - (distance * 3))  # Faster fade for speed
                 faded_color = [
-                    min(255, int(color[0] * brightness / 255)),
-                    min(255, int(color[1] * brightness / 255)),
-                    min(255, int(color[2] * brightness / 255))
+                    min(255, int(bottom_color[0] * brightness / 255)),
+                    min(255, int(bottom_color[1] * brightness / 255)),
+                    min(255, int(bottom_color[2] * brightness / 255))
                 ]
                 set_led_color(led_array, led_pos, faded_color)
-        send_color_array(led_array)
-        state['radius'] -= 1
-        if state['radius'] < 0:
-            state['cycle'] += 1
-            state['phase'] = 'expand'
-            state['radius'] = 0
+        state['bottom_radius'] += PULSE_SPEED
+
+    state['bottom_frame'] += 1
+
+    # Add random strobe effect - flash random LEDs white
+    if random.random() < 0.13:  # 13% chance per frame
+        strobe_count = random.randint(2, 5)  # Flash 2-5 random LEDs
+        for _ in range(strobe_count):
+            strobe_pos = random.randint(0, NUM_LEDS - 1)
+            # Check if this position isn't already lit by a pulse
+            is_pulse_pos = False
+            # Check top pulse
+            if state['top_radius'] > 0 and state['top_radius'] <= MAX_RADIUS:
+                for offset in range(-state['top_radius'], state['top_radius'] + 1):
+                    led_pos = CENTER + offset
+                    if 0 <= led_pos < NUM_LEDS and led_pos == strobe_pos:
+                        is_pulse_pos = True
+                        break
+            # Check bottom pulse
+            if not is_pulse_pos and state['bottom_radius'] > 0 and state['bottom_radius'] <= MAX_RADIUS:
+                for offset in range(-state['bottom_radius'], state['bottom_radius'] + 1):
+                    led_pos = CENTER + offset
+                    if 0 <= led_pos < NUM_LEDS and led_pos == strobe_pos:
+                        is_pulse_pos = True
+                        break
+            if not is_pulse_pos:
+                set_led_color(led_array, strobe_pos, WHITE)
+
+    send_color_array(led_array)
 
     return state
 
@@ -747,6 +854,7 @@ def crazy_rainbow_chase_frame(state):
     """
     Rapid rainbow colors chasing each other across the strand (single frame).
     Multiple color bands move at different speeds creating a chaotic rainbow effect.
+    Enhanced with strobe effects, increased speed, and random direction changes.
 
     Args:
         state: Animation state dictionary or None to initialize
@@ -755,7 +863,12 @@ def crazy_rainbow_chase_frame(state):
         Updated state dictionary
     """
     if state is None:
-        state = {'cycle': 0, 'step': 0}
+        state = {
+            'cycle': 0,
+            'step': 0,
+            'direction': 1,  # 1 for forward, -1 for backward
+            'time_since_direction_change': 0
+        }
 
     RAINBOW_COLORS = [
         [255, 0, 0],      # Red
@@ -767,15 +880,30 @@ def crazy_rainbow_chase_frame(state):
         [148, 0, 211]     # Violet
     ]
     BLACK = [0, 0, 0]
+    WHITE = [255, 255, 255]
     BAND_WIDTH = 8  # LEDs per color band
     NUM_BANDS = 3  # Number of overlapping bands
+    SPEED = 3  # Move 3 positions per frame for increased speed
     MAX_STEPS = NUM_LEDS + BAND_WIDTH * NUM_BANDS
+    DIRECTION_CHANGE_INTERVAL = 300  # 3 seconds at 100 FPS
+
+    # Check if it's time to randomly change direction
+    state['time_since_direction_change'] += 1
+    if state['time_since_direction_change'] >= DIRECTION_CHANGE_INTERVAL:
+        if random.random() < 0.5:  # 50% chance to reverse direction
+            state['direction'] *= -1
+        state['time_since_direction_change'] = 0
 
     led_array = create_led_array(BLACK, NUM_LEDS)
 
     # Draw multiple overlapping bands
     for band in range(NUM_BANDS):
-        band_start = state['step'] - (band * BAND_WIDTH * 2)
+        # Calculate band start position based on direction
+        if state['direction'] == 1:
+            band_start = state['step'] - (band * BAND_WIDTH * 2)
+        else:
+            band_start = (MAX_STEPS - state['step']) - (band * BAND_WIDTH * 2)
+
         color_index = (band + state['cycle']) % len(RAINBOW_COLORS)
         color = RAINBOW_COLORS[color_index]
 
@@ -784,12 +912,36 @@ def crazy_rainbow_chase_frame(state):
             if 0 <= led_pos < NUM_LEDS:
                 set_led_color(led_array, led_pos, color)
 
+    # Add random strobe effect - flash random LEDs white
+    if random.random() < 0.14:  # 14% chance per frame
+        strobe_count = random.randint(3, 7)  # Flash 3-7 random LEDs
+        for _ in range(strobe_count):
+            strobe_pos = random.randint(0, NUM_LEDS - 1)
+            # Check if this position isn't already lit by a rainbow band
+            is_band_pos = False
+            for band in range(NUM_BANDS):
+                if state['direction'] == 1:
+                    band_start = state['step'] - (band * BAND_WIDTH * 2)
+                else:
+                    band_start = (MAX_STEPS - state['step']) - (band * BAND_WIDTH * 2)
+                for i in range(BAND_WIDTH):
+                    led_pos = band_start + i
+                    if led_pos == strobe_pos and 0 <= led_pos < NUM_LEDS:
+                        is_band_pos = True
+                        break
+                if is_band_pos:
+                    break
+            if not is_band_pos:
+                set_led_color(led_array, strobe_pos, WHITE)
+
     send_color_array(led_array)
 
-    state['step'] += 1
+    state['step'] += SPEED
     if state['step'] >= MAX_STEPS:
         state['step'] = 0
         state['cycle'] += 1
+        # Randomly reset direction on cycle completion
+        state['direction'] = random.choice([1, -1])
 
     return state
 
@@ -853,6 +1005,7 @@ def crazy_meteor_frame(state):
     """
     Multiple meteors of different colors shoot across the strand simultaneously (single frame).
     Each meteor has a bright head and fading tail creating a streaking effect.
+    Enhanced with strobe effects, increased speed, and random direction changes.
 
     Args:
         state: Animation state dictionary or None to initialize
@@ -861,7 +1014,13 @@ def crazy_meteor_frame(state):
         Updated state dictionary
     """
     if state is None:
-        state = {'cycle': 0, 'step': 0, 'meteors': None, 'pause_frame': 0}
+        state = {
+            'cycle': 0,
+            'step': 0,
+            'meteors': None,
+            'pause_frame': 0,
+            'time_since_direction_change': 0
+        }
 
     METEOR_COLORS = [
         [255, 100, 50],   # Orange
@@ -872,10 +1031,13 @@ def crazy_meteor_frame(state):
         [100, 100, 255]   # Light Blue
     ]
     BLACK = [0, 0, 0]
+    WHITE = [255, 255, 255]
     NUM_METEORS = 4
     METEOR_LENGTH = 12  # LEDs in meteor tail
-    MAX_STEPS = NUM_LEDS + METEOR_LENGTH
+    SPEED = 3  # Move 3 positions per frame for increased speed
+    MAX_STEPS = (NUM_LEDS + METEOR_LENGTH) // SPEED  # Adjusted for faster speed
     PAUSE_FRAMES = 2  # 0.1 seconds / 0.05 seconds per frame
+    DIRECTION_CHANGE_INTERVAL = 300  # 3 seconds at 100 FPS
 
     # Initialize meteors on new cycle
     if state['meteors'] is None or (state['step'] == 0 and state['pause_frame'] == 0):
@@ -890,6 +1052,16 @@ def crazy_meteor_frame(state):
                 'direction': direction
             })
 
+    # Check if it's time to randomly change direction
+    if state['pause_frame'] == 0:  # Only change direction during active animation
+        state['time_since_direction_change'] += 1
+        if state['time_since_direction_change'] >= DIRECTION_CHANGE_INTERVAL:
+            # Randomly change direction for each meteor
+            for meteor in state['meteors']:
+                if random.random() < 0.5:  # 50% chance to reverse direction
+                    meteor['direction'] *= -1
+            state['time_since_direction_change'] = 0
+
     if state['pause_frame'] > 0:
         led_array = create_led_array(BLACK, NUM_LEDS)
         send_color_array(led_array)
@@ -899,14 +1071,15 @@ def crazy_meteor_frame(state):
             state['step'] = 0
             state['cycle'] += 1
             state['meteors'] = None  # Reset for next cycle
+            state['time_since_direction_change'] = 0
     else:
         led_array = create_led_array(BLACK, NUM_LEDS)
         for meteor in state['meteors']:
-            # Update meteor position
-            meteor['pos'] += meteor['direction']
+            # Update meteor position with increased speed
+            meteor['pos'] += meteor['direction'] * SPEED
             # Draw meteor with fading tail
             for i in range(METEOR_LENGTH):
-                led_pos = meteor['pos'] - (i * meteor['direction'])
+                led_pos = meteor['pos'] - (i * meteor['direction'] * SPEED)
                 if 0 <= led_pos < NUM_LEDS:
                     brightness = 1.0 - (i / METEOR_LENGTH)
                     faded_color = [
@@ -915,6 +1088,25 @@ def crazy_meteor_frame(state):
                         int(meteor['color'][2] * brightness)
                     ]
                     set_led_color(led_array, led_pos, faded_color)
+
+        # Add random strobe effect - flash random LEDs white
+        if random.random() < 0.12:  # 12% chance per frame
+            strobe_count = random.randint(2, 6)  # Flash 2-6 random LEDs
+            for _ in range(strobe_count):
+                strobe_pos = random.randint(0, NUM_LEDS - 1)
+                # Check if this position isn't already lit by a meteor
+                is_meteor_pos = False
+                for meteor in state['meteors']:
+                    for i in range(METEOR_LENGTH):
+                        led_pos = meteor['pos'] - (i * meteor['direction'] * SPEED)
+                        if led_pos == strobe_pos and 0 <= led_pos < NUM_LEDS:
+                            is_meteor_pos = True
+                            break
+                    if is_meteor_pos:
+                        break
+                if not is_meteor_pos:
+                    set_led_color(led_array, strobe_pos, WHITE)
+
         send_color_array(led_array)
         state['step'] += 1
         if state['step'] >= MAX_STEPS:
@@ -1085,13 +1277,13 @@ def animate_crazy_frame(state):
         }
 
     animations = [
-        (crazy_police_frame, 50, 'Police Lights'),      # 5 cycles * 10 frames per cycle
-        (crazy_strobe_frame, 200, 'Strobe'),     # 10 cycles * 20 frames per cycle
-        (crazy_race_frame, 200, 'Color Race'),       # 8 cycles * 25 frames per cycle
-        (crazy_pulse_frame, 200, 'Pulse'),      # 6 cycles * ~33 frames per cycle
-        (crazy_rainbow_chase_frame, 200, 'Rainbow Chase'),  # 5 cycles * 40 frames per cycle
-        (crazy_chaos_frame, 240, 'Chaos'),      # 8 cycles * 30 frames per cycle
-        (crazy_meteor_frame, 200, 'Meteors')      # 6 cycles * ~33 frames per cycle
+        (crazy_police_frame, 3000, 'Police Lights'),      # 30 seconds minimum
+        (crazy_strobe_frame, 3000, 'Strobe'),     # 30 seconds minimum
+        (crazy_race_frame, 3000, 'Color Race'),       # 30 seconds minimum
+        (crazy_pulse_frame, 3000, 'Pulse'),      # 30 seconds minimum
+        (crazy_rainbow_chase_frame, 3000, 'Rainbow Chase'),  # 30 seconds minimum
+        (crazy_chaos_frame, 3000, 'Chaos'),      # 30 seconds minimum
+        (crazy_meteor_frame, 3000, 'Meteors')      # 30 seconds minimum
     ]
 
     # Check for navigation request
