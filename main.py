@@ -8,7 +8,18 @@ import spidev
 import math
 import random
 import datetime
+import threading
+import logging
+import signal
+import sys
+from flask import Flask, request, jsonify
 
+# Configure logging early
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # We only have SPI bus 0 available to us on the Pi
 bus = 0
@@ -810,16 +821,30 @@ def is_daytime():
 
 def run_daytime_animations():
     """Run gentler animations suitable for daytime viewing."""
+    if get_current_mode() != 'force_day' and get_current_mode() != 'timemode':
+        return
     animate_orange_wave(60)
+    if get_current_mode() != 'force_day' and get_current_mode() != 'timemode':
+        return
     animate_slow_sparkle(1800)
 
 
 def run_nighttime_animations():
     """Run more active animations suitable for nighttime viewing."""
+    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
+        return
     animate_white_wave(60)
+    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
+        return
     animate_sparkle(1800)
+    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
+        return
     animate_random_colors(400)
+    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
+        return
     animate_gradient_wave_no_blue(8)
+    if get_current_mode() != 'force_night' and get_current_mode() != 'timemode':
+        return
     animate_sparkle(1000)
 
 
@@ -827,32 +852,388 @@ def animate_crazy_mode(iterations):
     """
     Cycle through all crazy animation patterns in sequence.
     Creates an intense, chaotic light show.
+    Checks mode periodically to allow interruption.
 
     Args:
         iterations: Number of times to cycle through all crazy animations
     """
-    for cycle in range(iterations):
-        crazy_police(5)
-        crazy_strobe(10)
-        crazy_race(8)
-        crazy_pulse(6)
-        crazy_rainbow_chase(5)
-        crazy_chaos(8)
-        crazy_meteor(6)
+    animations = [
+        (crazy_police, 5),
+        (crazy_strobe, 10),
+        (crazy_race, 8),
+        (crazy_pulse, 6),
+        (crazy_rainbow_chase, 5),
+        (crazy_chaos, 8),
+        (crazy_meteor, 6)
+    ]
 
-CURRENT_MODE = 'timemode' # available modes: timemode, force_night, force_day, force_crazy
+    for cycle in range(iterations):
+        # Check mode before each cycle
+        if get_current_mode() != 'force_crazy':
+            logger.info("Mode changed, interrupting crazy mode animation")
+            break
+
+        for anim_func, anim_iterations in animations:
+            # Check mode before each animation
+            if get_current_mode() != 'force_crazy':
+                logger.info("Mode changed, interrupting crazy mode animation")
+                return
+            anim_func(anim_iterations)
+
+# Thread-safe mode management
+_mode_lock = threading.Lock()
+_current_mode = 'timemode'  # available modes: timemode, force_night, force_day, force_crazy
+
+def get_current_mode():
+    """Get the current animation mode in a thread-safe manner."""
+    with _mode_lock:
+        return _current_mode
+
+def set_current_mode(mode):
+    """Set the current animation mode in a thread-safe manner.
+
+    Args:
+        mode: Mode string to set. If invalid, defaults to 'timemode'.
+
+    Returns:
+        True if mode was set, False if defaulted to 'timemode'
+    """
+    global _current_mode
+    valid_modes = ['timemode', 'force_night', 'force_day', 'force_crazy']
+    if mode in valid_modes:
+        with _mode_lock:
+            _current_mode = mode
+        return True
+    else:
+        # Default to timemode if invalid mode provided
+        with _mode_lock:
+            _current_mode = 'timemode'
+        logger.warning(f"Invalid mode '{mode}' provided, defaulting to 'timemode'")
+        return False
+
+
+# Flask web server
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    """Serve the main web interface."""
+    html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Christmas Tree LED Control</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                padding: 20px;
+            }
+
+            .container {
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 20px;
+                padding: 40px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                max-width: 600px;
+                width: 100%;
+            }
+
+            h1 {
+                text-align: center;
+                color: #333;
+                margin-bottom: 10px;
+                font-size: 28px;
+                font-weight: 600;
+            }
+
+            .status {
+                text-align: center;
+                color: #666;
+                margin-bottom: 30px;
+                font-size: 14px;
+            }
+
+            .status .current-mode {
+                font-weight: 600;
+                color: #667eea;
+            }
+
+            .buttons {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin-top: 20px;
+            }
+
+            .mode-button {
+                padding: 25px 20px;
+                border: none;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                text-transform: capitalize;
+                color: white;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+                position: relative;
+                overflow: hidden;
+            }
+
+            .mode-button::before {
+                content: '';
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 0;
+                height: 0;
+                border-radius: 50%;
+                background: rgba(255, 255, 255, 0.3);
+                transform: translate(-50%, -50%);
+                transition: width 0.6s, height 0.6s;
+            }
+
+            .mode-button:hover::before {
+                width: 300px;
+                height: 300px;
+            }
+
+            .mode-button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+            }
+
+            .mode-button:active {
+                transform: translateY(0);
+            }
+
+            .mode-button.active {
+                box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.8), 0 4px 15px rgba(0, 0, 0, 0.3);
+                transform: scale(1.05);
+            }
+
+            .mode-button.timemode {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+
+            .mode-button.force_night {
+                background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            }
+
+            .mode-button.force_day {
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            }
+
+            .mode-button.force_crazy {
+                background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            }
+
+            .mode-button.timemode:hover {
+                background: linear-gradient(135deg, #5568d3 0%, #653a8f 100%);
+            }
+
+            .mode-button.force_night:hover {
+                background: linear-gradient(135deg, #1a2f5f 0%, #254785 100%);
+            }
+
+            .mode-button.force_day:hover {
+                background: linear-gradient(135deg, #e081e8 0%, #f24459 100%);
+            }
+
+            .mode-button.force_crazy:hover {
+                background: linear-gradient(135deg, #f85d87 0%, #fdd02d 100%);
+            }
+
+            @media (max-width: 600px) {
+                .buttons {
+                    grid-template-columns: 1fr;
+                }
+
+                .container {
+                    padding: 30px 20px;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🎄 LED Control</h1>
+            <div class="status">
+                Current Mode: <span class="current-mode" id="current-mode">Loading...</span>
+            </div>
+            <div class="buttons">
+                <button class="mode-button timemode" onclick="setMode('timemode')">Time Mode</button>
+                <button class="mode-button force_night" onclick="setMode('force_night')">Force Night</button>
+                <button class="mode-button force_day" onclick="setMode('force_day')">Force Day</button>
+                <button class="mode-button force_crazy" onclick="setMode('force_crazy')">Force Crazy</button>
+            </div>
+        </div>
+
+        <script>
+            function updateCurrentMode() {
+                fetch('/api/mode')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('current-mode').textContent = data.mode.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        updateActiveButton(data.mode);
+                    })
+                    .catch(error => {
+                        console.error('Error fetching mode:', error);
+                    });
+            }
+
+            function updateActiveButton(mode) {
+                document.querySelectorAll('.mode-button').forEach(button => {
+                    button.classList.remove('active');
+                    if (button.classList.contains(mode)) {
+                        button.classList.add('active');
+                    }
+                });
+            }
+
+            function setMode(mode) {
+                fetch('/api/mode', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ mode: mode })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateCurrentMode();
+                    } else {
+                        alert('Error: ' + (data.error || 'Failed to set mode'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error setting mode:', error);
+                    alert('Error setting mode');
+                });
+            }
+
+            // Update mode on page load
+            updateCurrentMode();
+
+            // Auto-refresh current mode every 2 seconds
+            setInterval(updateCurrentMode, 2000);
+        </script>
+    </body>
+    </html>
+    """
+    return html
+
+@app.route('/api/mode', methods=['GET'])
+def get_mode():
+    """Get the current animation mode."""
+    return jsonify({'mode': get_current_mode()})
+
+@app.route('/api/mode', methods=['POST'])
+def set_mode():
+    """Set the animation mode."""
+    # Validate Content-Type
+    if not request.is_json:
+        return jsonify({'success': False, 'error': 'Content-Type must be application/json'}), 400
+
+    # Handle JSON parsing errors
+    try:
+        data = request.get_json()
+    except Exception as e:
+        logger.error(f"Error parsing JSON: {e}")
+        return jsonify({'success': False, 'error': 'Invalid JSON'}), 400
+
+    # Validate data exists
+    if data is None:
+        return jsonify({'success': False, 'error': 'No data provided'}), 400
+
+    # Get mode with default handling
+    mode = data.get('mode')
+    if mode is None:
+        logger.warning("No mode provided in request, defaulting to 'timemode'")
+        set_current_mode('timemode')  # This will set to timemode
+        return jsonify({'success': True, 'mode': get_current_mode(), 'message': 'Defaulted to timemode'})
+
+    # Set mode (will default to timemode if invalid)
+    was_valid = set_current_mode(mode)
+    current_mode = get_current_mode()
+
+    if was_valid:
+        logger.info(f"Mode changed to: {current_mode}")
+        return jsonify({'success': True, 'mode': current_mode})
+    else:
+        # Mode was invalid, but set_current_mode already defaulted to timemode
+        return jsonify({
+            'success': True,
+            'mode': current_mode,
+            'message': f"Invalid mode provided, defaulted to '{current_mode}'"
+        })
+
+def start_web_server():
+    """Start the Flask web server in a separate thread."""
+    try:
+        logger.info("Starting web server on port 80...")
+        app.run(host='0.0.0.0', port=80, debug=False, use_reloader=False)
+    except OSError as e:
+        if e.errno == 98:  # Address already in use
+            logger.error(f"Port 80 is already in use. Error: {e}")
+        elif e.errno == 13:  # Permission denied
+            logger.error(f"Permission denied to bind to port 80. Run with sudo. Error: {e}")
+        else:
+            logger.error(f"Failed to start web server: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error starting web server: {e}")
+
+# Global reference to web thread for graceful shutdown
+web_thread = None
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully."""
+    logger.info(f"Received signal {signum}, shutting down...")
+    # Flask server will stop when main thread exits (daemon thread)
+    sys.exit(0)
+
+# Register signal handlers for graceful shutdown
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+# Start web server in background thread
+try:
+    web_thread = threading.Thread(target=start_web_server, daemon=True)
+    web_thread.start()
+    # Give the server a moment to start
+    time.sleep(0.5)
+    logger.info("Web server thread started")
+except Exception as e:
+    logger.error(f"Failed to start web server thread: {e}")
 
 while True:
-    if CURRENT_MODE == 'timemode':
+    mode = get_current_mode()
+
+    if mode == 'timemode':
         # this is time modes
         if is_daytime():
             run_daytime_animations()
         else:
             run_nighttime_animations()
 
-    elif CURRENT_MODE == 'force_night':
+    elif mode == 'force_night':
         run_nighttime_animations()
-    elif CURRENT_MODE == 'force_day':
+    elif mode == 'force_day':
         run_daytime_animations()
-    elif CURRENT_MODE == 'force_crazy':
+    elif mode == 'force_crazy':
         animate_crazy_mode(1000)
