@@ -12,7 +12,7 @@ import threading
 import logging
 import signal
 import sys
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 
 # Configure logging early
@@ -1488,6 +1488,33 @@ def broadcast_pause_state():
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
+@app.route('/icon.png')
+def icon():
+    """Serve the app icon for mobile shortcuts."""
+    import os
+    return send_from_directory(os.path.join(os.path.dirname(__file__), 'assets'), 'icon.png')
+
+@app.route('/manifest.json')
+def manifest():
+    """Serve the web app manifest for Android."""
+    return jsonify({
+        "name": "Christmas Tree LED Control",
+        "short_name": "Xmas Tree",
+        "description": "Control your Christmas tree LED animations",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#667eea",
+        "theme_color": "#667eea",
+        "icons": [
+            {
+                "src": "/icon.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any maskable"
+            }
+        ]
+    })
+
 @app.route('/')
 def index():
     """Serve the main web interface."""
@@ -1498,6 +1525,23 @@ def index():
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Christmas Tree LED Control</title>
+
+        <!-- Favicon and App Icons -->
+        <link rel="icon" type="image/png" href="/icon.png">
+        <link rel="apple-touch-icon" href="/icon.png">
+        <link rel="apple-touch-icon" sizes="180x180" href="/icon.png">
+        <link rel="apple-touch-icon" sizes="512x512" href="/icon.png">
+
+        <!-- Web App Manifest for Android -->
+        <link rel="manifest" href="/manifest.json">
+
+        <!-- Meta tags for mobile -->
+        <meta name="theme-color" content="#667eea">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="Xmas Tree">
+        <meta name="mobile-web-app-capable" content="yes">
+
         <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
         <style>
             * {
