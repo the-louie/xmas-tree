@@ -414,7 +414,7 @@ def animate_slow_sparkle_frame(state):
     Returns:
         Updated state dictionary
     """
-    if state is None:
+    if state is None or not isinstance(state, dict) or 'phase' not in state:
         state = {'frame': 0, 'phase': 'sparkle'}  # phase: 'sparkle' or 'pause'
 
     SPARKLE_COLOR = [180, 180, 180]  # White sparkle
@@ -1169,6 +1169,12 @@ def run_daytime_frame(state):
         (animate_slow_sparkle_frame, 18000, 'Slow Sparkle')   # 1800 frames with pauses
     ]
 
+    # Ensure sequence_index exists and is valid
+    if 'sequence_index' not in state or not isinstance(state['sequence_index'], int) or state['sequence_index'] < 0 or state['sequence_index'] >= len(animations):
+        state['sequence_index'] = 0
+        state['animation_state'] = None
+        state['frame_count'] = 0
+
     # Check for navigation request
     nav_request = get_navigation_request()
     if nav_request == 'next':
@@ -1225,6 +1231,12 @@ def run_nighttime_frame(state):
         (animate_gradient_wave_no_blue_frame, 3344, 'Gradient Wave'),    # 8 cycles * 418 steps
         (animate_sparkle_frame, 1000, 'Sparkle')                   # 1000 frames
     ]
+
+    # Ensure sequence_index exists and is valid
+    if 'sequence_index' not in state or not isinstance(state['sequence_index'], int) or state['sequence_index'] < 0 or state['sequence_index'] >= len(animations):
+        state['sequence_index'] = 0
+        state['animation_state'] = None
+        state['frame_count'] = 0
 
     # Check for navigation request
     nav_request = get_navigation_request()
@@ -1284,6 +1296,12 @@ def animate_crazy_frame(state):
         (crazy_chaos_frame, 3000, 'Chaos'),      # 30 seconds minimum
         (crazy_meteor_frame, 3000, 'Meteors')      # 30 seconds minimum
     ]
+
+    # Ensure sequence_index exists and is valid
+    if 'sequence_index' not in state or not isinstance(state['sequence_index'], int) or state['sequence_index'] < 0 or state['sequence_index'] >= len(animations):
+        state['sequence_index'] = 0
+        state['animation_state'] = None
+        state['frame_count'] = 0
 
     # Check for navigation request
     nav_request = get_navigation_request()
